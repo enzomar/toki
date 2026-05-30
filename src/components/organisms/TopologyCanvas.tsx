@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent }
 import { AddRounded, RemoveRounded, RestartAltRounded } from '@mui/icons-material'
 import { Box, IconButton, Paper, Stack, Typography } from '@mui/material'
 import { alpha } from '@mui/material/styles'
-import type { Agent, Edge, SimulationReport, WorkspacePricing } from '../../features/topology/types'
+import type { Agent, Edge, LayoutNode, SimulationReport, WorkspacePricing } from '../../features/topology/types'
 import {
   buildTopologyLayout,
   formatCurrency,
@@ -29,10 +29,49 @@ type CanvasPoint = {
   y: number
 }
 
+type CanvasView = {
+  zoom: number
+  pan: CanvasPoint
+}
+
 const DEFAULT_ZOOM = 1
 const MIN_ZOOM = 0.65
 const MAX_ZOOM = 2.4
 const ZOOM_FACTOR = 1.14
+
+function getResetViewState(layout: LayoutNode[], width: number, height: number, nodeWidth: number, nodeHeight: number): CanvasView {
+  if (layout.length === 0) {
+    return {
+      zoom: DEFAULT_ZOOM,
+      pan: { x: 0, y: 0 },
+    }
+  }
+
+  const paddingX = 72
+  const paddingY = 64
+  const minX = Math.min(...layout.map((node) => node.x - nodeWidth / 2))
+  const maxX = Math.max(...layout.map((node) => node.x + nodeWidth / 2))
+  const minY = Math.min(...layout.map((node) => node.y - nodeHeight / 2))
+  const maxY = Math.max(...layout.map((node) => node.y + nodeHeight / 2))
+  const boundsWidth = Math.max(1, maxX - minX)
+  const boundsHeight = Math.max(1, maxY - minY)
+  const fitZoom = Math.min(
+    DEFAULT_ZOOM,
+    (width - paddingX * 2) / boundsWidth,
+    (height - paddingY * 2) / boundsHeight,
+  )
+  const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, fitZoom))
+  const centerX = (minX + maxX) / 2
+  const centerY = (minY + maxY) / 2
+
+  return {
+    zoom,
+    pan: {
+      x: width / 2 - centerX * zoom,
+      y: height / 2 - centerY * zoom,
+    },
+  }
+}
 
 export function TopologyCanvas(props: TopologyCanvasProps) {
   const width = 1120
@@ -43,11 +82,12 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
   const nodeWidth = 220
   const nodeHeight = 128
   const levels = Array.from(new Set(layout.map((node) => node.depth))).sort((left, right) => left - right)
+  const resetViewState = getResetViewState(layout, width, height, nodeWidth, nodeHeight)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dragStateRef = useRef<{ pointerId: number; clientX: number; clientY: number; panX: number; panY: number } | null>(null)
   const draggedRef = useRef(false)
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM)
-  const [pan, setPan] = useState<CanvasPoint>({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(resetViewState.zoom)
+  const [pan, setPan] = useState<CanvasPoint>(resetViewState.pan)
   const [isPanning, setIsPanning] = useState(false)
   const formatCost = (value: number) => formatCurrency(value, props.workspacePricing.currency)
 
@@ -82,8 +122,8 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
   }
 
   const resetView = () => {
-    setPan({ x: 0, y: 0 })
-    setZoom(DEFAULT_ZOOM)
+    setPan(resetViewState.pan)
+    setZoom(resetViewState.zoom)
   }
 
   const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {

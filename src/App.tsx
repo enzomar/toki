@@ -24,7 +24,6 @@ import {
   MenuItem,
   Paper,
   Select,
-  Slide,
   Snackbar,
   Stack,
   Switch,
@@ -34,6 +33,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from '@mui/material'
@@ -42,8 +42,10 @@ import {
   CalculateRounded,
   DeleteOutlineRounded,
   ExpandMoreRounded,
+  FavoriteRounded,
   FileDownloadOutlined,
   FileUploadOutlined,
+  MailOutlineRounded,
   PaidRounded,
   PlayArrowRounded,
   RestartAltRounded,
@@ -94,6 +96,12 @@ type StatusState = {
   message: string
 }
 
+type ContactFormState = {
+  name: string
+  email: string
+  message: string
+}
+
 type RuntimeReadinessItem = {
   id: string
   label: string
@@ -129,6 +137,9 @@ const BUSINESS_TRAFFIC_PATTERNS = [
     helper: 'Fresh sessions keep arriving at a target rate regardless of when previous ones finish.',
   },
 ] as const
+
+const PAYPAL_DONATE_URL = (import.meta.env.VITE_PAYPAL_DONATE_URL ?? '').trim()
+const AUTHOR_CONTACT_FORM_ENDPOINT = 'https://formspree.io/f/xzdwwwzv'
 
 function getNextCustomModelName(existingNames: string[]) {
   let index = 1
@@ -259,11 +270,14 @@ export default function App() {
   const [isTokenAssistantOpen, setTokenAssistantOpen] = useState(false)
   const [isPricingDialogOpen, setPricingDialogOpen] = useState(false)
   const [isTopologyDialogOpen, setTopologyDialogOpen] = useState(false)
+  const [isContactDialogOpen, setContactDialogOpen] = useState(false)
   const [topologySelectedAgentId, setTopologySelectedAgentId] = useState<string | null>(null)
   const [workspacePricing, setWorkspacePricing] = useState<WorkspacePricing>(() => createDefaultWorkspacePricing())
   const [quickEstimate, setQuickEstimate] = useState<QuickEstimateState>(() => createEmptyQuickEstimate())
   const [newModelName, setNewModelName] = useState(() => getNextCustomModelName(MODEL_OPTIONS.map((option) => option.value)))
   const [tokenPlannerSample, setTokenPlannerSample] = useState<TokenSampleState>({ inputText: '', outputText: '' })
+  const [contactForm, setContactForm] = useState<ContactFormState>({ name: '', email: '', message: '' })
+  const [isSubmittingContact, setSubmittingContact] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const safeEdges = sanitizeEdges(agents, edges)
@@ -378,6 +392,71 @@ export default function App() {
     }
 
     setStatus(null)
+  }
+
+  const openHeaderLink = (url: string, missingMessage: string) => {
+    if (!url) {
+      setStatus({ severity: 'info', message: missingMessage })
+      return
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  const closeContactDialog = () => {
+    if (isSubmittingContact) {
+      return
+    }
+
+    setContactDialogOpen(false)
+  }
+
+  const submitContactForm = async () => {
+    const name = contactForm.name.trim()
+    const email = contactForm.email.trim()
+    const message = contactForm.message.trim()
+
+    if (!name || !email || !message) {
+      setStatus({ severity: 'info', message: 'Add your name, email, and message before sending.' })
+      return
+    }
+
+    if (!email.includes('@') || email.startsWith('@') || email.endsWith('@')) {
+      setStatus({ severity: 'info', message: 'Enter a valid email address before sending.' })
+      return
+    }
+
+    setSubmittingContact(true)
+
+    try {
+      const response = await fetch(AUTHOR_CONTACT_FORM_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          message,
+          subject: 'Toki contact request',
+        }),
+      })
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { errors?: Array<{ message?: string }> } | null
+        const errorMessage = payload?.errors?.[0]?.message ?? 'The message could not be sent right now.'
+        throw new Error(errorMessage)
+      }
+
+      setContactForm({ name: '', email: '', message: '' })
+      setContactDialogOpen(false)
+      setStatus({ severity: 'success', message: 'Message sent to the author.' })
+    } catch (error) {
+      setStatus({ severity: 'error', message: error instanceof Error ? error.message : 'The message could not be sent right now.' })
+    } finally {
+      setSubmittingContact(false)
+    }
   }
 
   const resetReport = () => {
@@ -801,6 +880,45 @@ export default function App() {
             boxShadow: '0 18px 40px rgba(11, 21, 35, 0.26)',
           }}
         >
+          <Stack direction="row" spacing={0.75} sx={{ justifyContent: 'flex-end', mb: 1.25 }}>
+            <Tooltip title="Donate via PayPal">
+              <IconButton
+                size="small"
+                aria-label="Donate via PayPal"
+                onClick={() => openHeaderLink(PAYPAL_DONATE_URL, 'Set VITE_PAYPAL_DONATE_URL to enable the PayPal donate button.')}
+                sx={{
+                  color: '#f7fafc',
+                  border: '1px solid rgba(219, 230, 243, 0.28)',
+                  bgcolor: 'rgba(255, 255, 255, 0.04)',
+                  '&:hover': {
+                    borderColor: 'rgba(247, 250, 252, 0.54)',
+                    bgcolor: 'rgba(255, 255, 255, 0.1)',
+                  },
+                }}
+              >
+                <FavoriteRounded fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Contact the author">
+              <IconButton
+                size="small"
+                aria-label="Contact the author"
+                onClick={() => setContactDialogOpen(true)}
+                sx={{
+                  color: '#f7fafc',
+                  border: '1px solid rgba(219, 230, 243, 0.28)',
+                  bgcolor: 'rgba(255, 255, 255, 0.04)',
+                  '&:hover': {
+                    borderColor: 'rgba(247, 250, 252, 0.54)',
+                    bgcolor: 'rgba(255, 255, 255, 0.1)',
+                  },
+                }}
+              >
+                <MailOutlineRounded fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+
           <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2.5} sx={{ justifyContent: 'space-between', alignItems: { lg: 'center' } }}>
             <Box>
               <TokiLogo light caption="Simple Runtime Token Estimator" />
@@ -1062,6 +1180,25 @@ export default function App() {
                 </Button>
               </Stack>
 
+              <Paper variant="outlined" sx={{ p: 2, borderColor: 'rgba(19, 34, 56, 0.08)', bgcolor: 'rgba(248, 250, 252, 0.72)' }}>
+                <Typography variant="subtitle2">Logic controller guide</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.6 }}>
+                  The logic controller decides what happens when an agent has more than one outgoing handoff.
+                </Typography>
+                <Grid container spacing={1.5} sx={{ mt: 0.35 }}>
+                  {ROUTING_MODE_OPTIONS.map((option) => (
+                    <Grid key={option.value} size={{ xs: 12, md: 4 }}>
+                      <Paper variant="outlined" sx={{ p: 1.5, height: '100%', borderColor: 'rgba(19, 34, 56, 0.08)' }}>
+                        <Typography variant="subtitle2">{option.label}</Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.6 }}>
+                          {option.helper}
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                  ))}
+                </Grid>
+              </Paper>
+
               {agents.length === 0 ? (
                 <Alert severity="info">No agents yet. Add the first agent to describe the system.</Alert>
               ) : (
@@ -1109,10 +1246,21 @@ export default function App() {
                               <InputLabel>Logic controller</InputLabel>
                               <Select label="Logic controller" value={agent.routingMode} onChange={(event) => updateAgent(agent.id, 'routingMode', event.target.value as RoutingMode)}>
                                 {ROUTING_MODE_OPTIONS.map((option) => (
-                                  <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
+                                  <MenuItem key={option.value} value={option.value} sx={{ alignItems: 'flex-start' }}>
+                                    <Box>
+                                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                        {option.label}
+                                      </Typography>
+                                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35, whiteSpace: 'normal' }}>
+                                        {option.helper}
+                                      </Typography>
+                                    </Box>
+                                  </MenuItem>
                                 ))}
                               </Select>
-                              <FormHelperText>How this agent distributes traffic across outgoing handoffs.</FormHelperText>
+                              <FormHelperText>
+                                {ROUTING_MODE_OPTIONS.find((option) => option.value === agent.routingMode)?.helper ?? 'Choose how this agent sends traffic across outgoing handoffs.'}
+                              </FormHelperText>
                             </FormControl>
                           </Grid>
                           <Grid size={{ xs: 12, sm: 6 }}>
@@ -1835,13 +1983,55 @@ export default function App() {
           </DialogActions>
         </Dialog>
 
+        <Dialog open={isContactDialogOpen} onClose={closeContactDialog} maxWidth="sm" fullWidth fullScreen={isPhoneLayout}>
+          <DialogTitle>Contact the author</DialogTitle>
+          <DialogContent dividers>
+            <Stack spacing={2.25} sx={{ pt: 0.5 }}>
+              <Typography variant="body2" color="text.secondary">
+                Send a short message directly from the app. Delivery is handled behind the scenes by Formspree.
+              </Typography>
+              <TextField
+                autoFocus
+                fullWidth
+                size="small"
+                label="Your name"
+                value={contactForm.name}
+                onChange={(event) => setContactForm((current) => ({ ...current, name: event.target.value }))}
+              />
+              <TextField
+                fullWidth
+                size="small"
+                type="email"
+                label="Your email"
+                value={contactForm.email}
+                onChange={(event) => setContactForm((current) => ({ ...current, email: event.target.value }))}
+              />
+              <TextField
+                fullWidth
+                multiline
+                minRows={5}
+                label="Message"
+                placeholder="What do you want to ask or report?"
+                value={contactForm.message}
+                onChange={(event) => setContactForm((current) => ({ ...current, message: event.target.value }))}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeContactDialog} disabled={isSubmittingContact}>
+              Cancel
+            </Button>
+            <Button variant="contained" onClick={submitContactForm} disabled={isSubmittingContact}>
+              {isSubmittingContact ? 'Sending...' : 'Send message'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
         <Snackbar
           open={Boolean(status)}
           autoHideDuration={statusAutoHideDuration}
           onClose={handleStatusClose}
           anchorOrigin={{ vertical: isPhoneLayout ? 'top' : 'bottom', horizontal: isPhoneLayout ? 'center' : 'right' }}
-          TransitionComponent={Slide}
-          TransitionProps={{ direction: isPhoneLayout ? 'down' : 'left' }}
           sx={{
             '& .MuiSnackbar-root': {
               maxWidth: '100%',

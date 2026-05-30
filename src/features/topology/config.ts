@@ -26,17 +26,17 @@ export const ROUTING_MODE_OPTIONS: RoutingModeOption[] = [
   {
     value: 'fanout',
     label: 'Simple / fan-out',
-    helper: 'Run every downstream branch and multiply traffic by edge weight.',
+    helper: 'Send the request to every downstream branch. Traffic grows because all matching branches run.',
   },
   {
     value: 'weighted',
     label: 'Weighted choice',
-    helper: 'Split visits proportionally across branches, similar to a throughput controller.',
+    helper: 'Send the request to one downstream branch at a time. Edge weights act like a traffic split, so traffic is divided, not multiplied.',
   },
   {
     value: 'interleave',
     label: 'Interleave',
-    helper: 'Rotate evenly across downstream branches to avoid full fan-out.',
+    helper: 'Take turns across downstream branches in rotation. Traffic stays balanced without running every branch.',
   },
 ]
 

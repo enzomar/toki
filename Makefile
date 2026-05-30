@@ -6,7 +6,7 @@ PREVIEW_PORT ?= 4173
 MESSAGE ?= chore: update toki
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
-.PHONY: help install dev build preview vercel-login vercel-link deploy-preview deploy-prod deploy push auto-push
+.PHONY: help install dev build preview vercel-login vercel-link deploy-preview deploy-prod deploy push push-auto auto-push
 
 help:
 	@printf "Targets:\n"
@@ -19,6 +19,7 @@ help:
 	@printf "  make deploy-preview  Create a Vercel preview deployment\n"
 	@printf "  make deploy-prod     Create a Vercel production deployment\n"
 	@printf "  make push            Git add/commit/push current branch\n"
+	@printf "  make push-auto       Alias for make push with auto-commit\n"
 
 install:
 	npm install
@@ -54,4 +55,6 @@ push:
 	@if ! git diff --cached --quiet; then git commit -m "$(MESSAGE)"; else echo "No staged changes to commit."; fi
 	git push origin $(GIT_BRANCH)
 
-auto-push: push
+push-auto: push
+
+auto-push: push-auto

@@ -48,6 +48,27 @@ Preview the production build locally:
 make preview
 ```
 
+## Optional header links
+
+The header supports two small external actions:
+
+- `VITE_PAYPAL_DONATE_URL`: opened by the heart icon for PayPal donations.
+- The mail icon opens an in-app contact dialog that posts to the hardcoded Formspree form `xzdwwwzv`.
+
+Create a local env file if you want to enable them during development:
+
+```bash
+cp .env.example .env.local
+```
+
+Then set the values you want:
+
+```bash
+VITE_PAYPAL_DONATE_URL=https://www.paypal./?hosted_button_id=YOUR_BUTTON_ID
+```
+
+If the PayPal value is missing, the heart icon stays visible and the app shows a setup toast instead of opening a blank link.
+
 ## Makefile targets
 
 - `make install`: install dependencies.
@@ -59,8 +80,9 @@ make preview
 - `make deploy-preview`: create a preview deployment on Vercel.
 - `make deploy-prod`: build locally, then create a production deployment on Vercel.
 - `make push MESSAGE="..."`: add, commit, and push the current branch to `origin`.
+- `make push-auto MESSAGE="..."`: alias for `make push`, using the same auto-commit flow.
 
-`make push` is intentionally guarded: it stops if this folder is not a git repository or if the `origin` remote is missing.
+`make push` and `make push-auto` are intentionally guarded: they stop if this folder is not a git repository or if the `origin` remote is missing.
 
 ## Deploying to Vercel
 
@@ -111,3 +133,4 @@ The repository includes [.gitignore](.gitignore) entries for:
 ## Maintenance guidance
 
 See [agent.md](agent.md) for repository-specific instructions that future coding agents should follow when they modify deployment files, docs, pricing behavior, or developer tooling.
+com/donate

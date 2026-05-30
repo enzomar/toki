@@ -5,8 +5,14 @@ This file exists to keep operational docs and deployment files aligned with the 
 ## Core rules
 
 - Keep [README.md](README.md), [Makefile](Makefile), and [vercel.json](vercel.json) in sync when deployment or developer workflows change.
+- If you add or rename environment variables, update both [README.md](README.md) and [.env.example](.env.example) in the same change.
 - If you change pricing units, currency behavior, or cost formulas, update both [README.md](README.md) and this file.
 - If you change the user-facing estimation flow, update the README language so it still matches the UI.
+
+## Environment config invariants
+
+- `VITE_PAYPAL_DONATE_URL` drives the small PayPal heart icon in the header.
+- The author-contact icon opens an in-app dialog that posts to the hardcoded Formspree form `xzdwwwzv`.
 
 ## Product invariants
 

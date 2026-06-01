@@ -2,12 +2,14 @@ import { PRICING, PRICING_TOKENS_PER_UNIT, EMBEDDING_PRICE_PER_1M, MODEL_OPTIONS
 import type {
   Agent,
   AgentCostBreakdown,
+  ConfidenceLevel,
   CurrencyCode,
   Edge,
   EstimateConfig,
   EstimateSummary,
   LayoutNode,
   PricingMap,
+  TimeRange,
   TopologyDocument,
   WorkspacePricing,
 } from './types'
@@ -23,7 +25,7 @@ export function createId(prefix: string): string {
 
 // --- Formatting ---
 
-export function formatCurrency(value: number, currency: CurrencyCode = 'USD'): string {
+export function formatCurrency(value: number, currency: CurrencyCode = 'EUR'): string {
   const fractionDigits = value >= 10 ? 2 : value >= 1 ? 3 : 4
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -55,52 +57,173 @@ export function getModelLabel(model: string): string {
   return MODEL_OPTIONS.find((o) => o.value === model)?.label ?? model
 }
 
-// --- Cost calculation (no simulation, direct multiplication) ---
+// --- Volume helpers ---
+
+const TIME_RANGE_TO_MONTHLY: Record<TimeRange, number> = {
+  day: 30,
+  week: 4.33,
+  month: 1,
+  year: 1 / 12,
+}
+
+export function computeConversationsPerMonth(users: number, conversationsPerUser: number, timeRange: TimeRange): number {
+  return Math.round(users * conversationsPerUser * TIME_RANGE_TO_MONTHLY[timeRange])
+}
+
+export function createEstimateConfig(users: number, conversationsPerUser: number, timeRange: TimeRange): EstimateConfig {
+  return {
+    users,
+    conversationsPerUser,
+    timeRange,
+    conversationsPerMonth: computeConversationsPerMonth(users, conversationsPerUser, timeRange),
+  }
+}
+
+// --- Traffic share calculation (uses edge weights) ---
+
+/**
+ * Computes the effective traffic share for each agent based on topology edges.
+ * An agent with no incoming edges gets 100% traffic.
+ * An agent downstream of a weighted router gets its proportional share.
+ */
+export function computeTrafficShares(agents: Agent[], edges: Edge[]): Map<string, number> {
+  const shares = new Map<string, number>()
+  if (agents.length === 0) return shares
+
+  const entries = inferEntryAgents(agents, edges)
+  // Entry agents get 100% traffic
+  entries.forEach((a) => shares.set(a.id, 1.0))
+
+  // BFS propagation
+  const queue = entries.map((a) => a.id)
+  const visited = new Set<string>()
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!
+    if (visited.has(currentId)) continue
+    visited.add(currentId)
+
+    const currentShare = shares.get(currentId) ?? 0
+    const agent = agents.find((a) => a.id === currentId)
+    if (!agent) continue
+
+    const outgoing = edges.filter((e) => e.sourceId === currentId && e.weight > 0)
+    if (outgoing.length === 0) continue
+
+    if (agent.routingMode === 'fanout') {
+      // Fan-out: each downstream gets full traffic × weight
+      outgoing.forEach((e) => {
+        const existing = shares.get(e.targetId) ?? 0
+        shares.set(e.targetId, existing + currentShare * e.weight)
+        if (!visited.has(e.targetId)) queue.push(e.targetId)
+      })
+    } else if (agent.routingMode === 'weighted') {
+      // Weighted: each edge weight is the absolute fraction of traffic (0-1 = 0%-100%)
+      // No normalization — if orchestrator sends 50% to A and 80% to B, that's what happens
+      outgoing.forEach((e) => {
+        const existing = shares.get(e.targetId) ?? 0
+        shares.set(e.targetId, existing + currentShare * e.weight)
+        if (!visited.has(e.targetId)) queue.push(e.targetId)
+      })
+    } else {
+      // Interleave: equal split
+      const equalShare = currentShare / outgoing.length
+      outgoing.forEach((e) => {
+        const existing = shares.get(e.targetId) ?? 0
+        shares.set(e.targetId, existing + equalShare)
+        if (!visited.has(e.targetId)) queue.push(e.targetId)
+      })
+    }
+  }
+
+  // Agents not reached by BFS get 100% (standalone)
+  agents.forEach((a) => {
+    if (!shares.has(a.id)) shares.set(a.id, 1.0)
+  })
+
+  return shares
+}
+
+// --- Cost calculation ---
+
+/**
+ * Computes the effective input tokens per call accounting for:
+ * - Base input tokens
+ * - RAG context (chunks × tokens)
+ * - MCP input overhead (tool results fed back)
+ * - History growth across multi-turn calls
+ */
+function getEffectiveInputPerCall(agent: Agent): number {
+  const ragContext = agent.ragEnabled ? agent.ragChunks * agent.ragChunkTokens : 0
+  const mcpInput = agent.mcpCalls * agent.mcpInputTokensPerCall
+  const baseInput = agent.inputTokensPerCall + ragContext + mcpInput
+
+  // History growth: average across all calls in a conversation
+  // Call 1: base, Call 2: base × factor, Call 3: base × factor², ...
+  if (agent.callsPerConversation <= 1 || agent.historyGrowthFactor <= 1) {
+    return baseInput
+  }
+
+  const factor = agent.historyGrowthFactor
+  const n = agent.callsPerConversation
+  // Geometric series average: base × (factor^n - 1) / (n × (factor - 1))
+  const avgMultiplier = (Math.pow(factor, n) - 1) / (n * (factor - 1))
+  return Math.round(baseInput * avgMultiplier)
+}
+
+function getEffectiveOutputPerCall(agent: Agent): number {
+  return agent.outputTokensPerCall + (agent.mcpCalls * agent.mcpOutputTokensPerCall)
+}
 
 export function calculateAgentCost(
   agent: Agent,
   conversationsPerMonth: number,
+  trafficShare: number,
   pricingMap: PricingMap = PRICING,
   embeddingPricePer1M: number = EMBEDDING_PRICE_PER_1M,
 ): AgentCostBreakdown {
   const pricing = getPricing(agent.model, pricingMap)
-  const callsPerMonth = conversationsPerMonth * agent.callsPerConversation
+  const effectiveConversations = conversationsPerMonth * trafficShare
+  const callsPerMonth = effectiveConversations * agent.callsPerConversation
 
-  // Base LLM tokens
-  const ragContextPerCall = agent.ragEnabled ? agent.ragChunks * agent.ragChunkTokens : 0
-  const mcpOutputPerCall = agent.mcpCalls * agent.mcpTokensPerCall
-
-  const inputPerCall = agent.inputTokensPerCall + ragContextPerCall
-  const outputPerCall = agent.outputTokensPerCall + mcpOutputPerCall
+  const inputPerCall = getEffectiveInputPerCall(agent)
+  const outputPerCall = getEffectiveOutputPerCall(agent)
 
   const inputTokensPerMonth = callsPerMonth * inputPerCall
   const outputTokensPerMonth = callsPerMonth * outputPerCall
-
-  // Embedding tokens (one retrieval per call if RAG enabled)
   const embeddingTokensPerMonth = agent.ragEnabled ? callsPerMonth * agent.ragEmbeddingTokens : 0
-
-  // RAG context tokens (already included in input, tracked separately for visibility)
-  const ragContextTokensPerMonth = callsPerMonth * ragContextPerCall
-
+  const ragContextTokensPerMonth = agent.ragEnabled ? callsPerMonth * agent.ragChunks * agent.ragChunkTokens : 0
   const totalTokensPerMonth = inputTokensPerMonth + outputTokensPerMonth + embeddingTokensPerMonth
 
-  // Cost
-  const inputCost = (inputTokensPerMonth / PRICING_TOKENS_PER_UNIT) * pricing.in
+  // Cost with caching discount
+  const cacheRate = Math.min(100, Math.max(0, agent.promptCachePercent)) / 100
+  const cachedInputTokens = inputTokensPerMonth * cacheRate
+  const uncachedInputTokens = inputTokensPerMonth * (1 - cacheRate)
+
+  // Cached tokens cost ~10% of normal (90% discount)
+  const inputCost = (uncachedInputTokens / PRICING_TOKENS_PER_UNIT) * pricing.in +
+    (cachedInputTokens / PRICING_TOKENS_PER_UNIT) * pricing.in * 0.1
   const outputCost = (outputTokensPerMonth / PRICING_TOKENS_PER_UNIT) * pricing.out
   const embeddingCost = (embeddingTokensPerMonth / PRICING_TOKENS_PER_UNIT) * embeddingPricePer1M
   const costPerMonth = inputCost + outputCost + embeddingCost
+
+  // What it would cost without caching
+  const fullInputCost = (inputTokensPerMonth / PRICING_TOKENS_PER_UNIT) * pricing.in
+  const cacheSavingsPerMonth = fullInputCost + outputCost + embeddingCost - costPerMonth
 
   return {
     id: agent.id,
     name: agent.name,
     model: agent.model,
+    trafficShare,
     callsPerMonth,
     inputTokensPerMonth,
     outputTokensPerMonth,
     embeddingTokensPerMonth,
-    ragContextTokensPerMonth: ragContextTokensPerMonth,
+    ragContextTokensPerMonth,
     totalTokensPerMonth,
     costPerMonth,
+    cacheSavingsPerMonth,
   }
 }
 
@@ -108,10 +231,14 @@ export function calculateEstimate(
   agents: Agent[],
   config: EstimateConfig,
   pricing: WorkspacePricing,
+  edges: Edge[] = [],
 ): EstimateSummary {
-  const agentBreakdowns = agents.map((agent) =>
-    calculateAgentCost(agent, config.conversationsPerMonth, pricing.models, pricing.embeddingPricePer1M),
-  )
+  const trafficShares = computeTrafficShares(agents, edges)
+
+  const agentBreakdowns = agents.map((agent) => {
+    const share = trafficShares.get(agent.id) ?? 1.0
+    return calculateAgentCost(agent, config.conversationsPerMonth, share, pricing.models, pricing.embeddingPricePer1M)
+  })
 
   const totalTokensPerMonth = agentBreakdowns.reduce((sum, a) => sum + a.totalTokensPerMonth, 0)
   const totalCostPerMonth = agentBreakdowns.reduce((sum, a) => sum + a.costPerMonth, 0)
@@ -120,6 +247,15 @@ export function calculateEstimate(
   const totalEmbeddingTokens = agentBreakdowns.reduce((sum, a) => sum + a.embeddingTokensPerMonth, 0)
   const costPerConversation = config.conversationsPerMonth > 0 ? totalCostPerMonth / config.conversationsPerMonth : 0
 
+  // Best case: assume 50% prompt caching on all agents
+  const bestCaseCostPerMonth = totalCostPerMonth * 0.7
+  // Worst case: no caching + 20% overhead for retries/errors
+  const totalCacheSavings = agentBreakdowns.reduce((sum, a) => sum + a.cacheSavingsPerMonth, 0)
+  const worstCaseCostPerMonth = (totalCostPerMonth + totalCacheSavings) * 1.2
+
+  // Confidence assessment
+  const { confidence, reasons } = assessConfidence(agents, config, edges)
+
   return {
     totalTokensPerMonth,
     totalCostPerMonth,
@@ -127,8 +263,51 @@ export function calculateEstimate(
     totalOutputTokens,
     totalEmbeddingTokens,
     costPerConversation,
+    bestCaseCostPerMonth,
+    worstCaseCostPerMonth,
+    confidence,
+    confidenceReasons: reasons,
     agents: agentBreakdowns.sort((a, b) => b.costPerMonth - a.costPerMonth),
   }
+}
+
+function assessConfidence(agents: Agent[], config: EstimateConfig, edges: Edge[]): { confidence: ConfidenceLevel; reasons: string[] } {
+  const reasons: string[] = []
+  let score = 100
+
+  if (config.conversationsPerMonth === 0) {
+    reasons.push('No traffic volume set')
+    score -= 40
+  }
+  if (agents.length === 0) {
+    reasons.push('No agents configured')
+    score -= 50
+  }
+  if (agents.some((a) => a.inputTokensPerCall === 500 && a.outputTokensPerCall === 200)) {
+    reasons.push('Some agents use default token values — measure real prompts')
+    score -= 15
+  }
+  if (agents.some((a) => a.callsPerConversation > 1 && a.historyGrowthFactor === 1)) {
+    reasons.push('Multi-turn agents without history growth factor set')
+    score -= 10
+  }
+  if (agents.length > 1 && edges.length === 0) {
+    reasons.push('Multiple agents but no connections — traffic routing not modeled')
+    score -= 15
+  }
+  if (agents.some((a) => a.mcpCalls > 0 && a.mcpInputTokensPerCall === 0)) {
+    reasons.push('MCP calls without input overhead — tool results likely feed back as context')
+    score -= 10
+  }
+  if (agents.every((a) => a.promptCachePercent === 0) && agents.some((a) => a.inputTokensPerCall > 500)) {
+    reasons.push('No prompt caching configured — consider if system prompts are reused')
+    score -= 5
+  }
+
+  if (reasons.length === 0) reasons.push('All key parameters configured')
+
+  const confidence: ConfidenceLevel = score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low'
+  return { confidence, reasons }
 }
 
 // --- Edge / topology helpers ---
@@ -151,13 +330,109 @@ export function getAgentConnections(agentId: string, edges: Edge[]): { incoming:
   }
 }
 
+// --- Token estimation from text ---
+
+export function estimateTokenCount(text: string): number {
+  const trimmed = text.trim()
+  if (!trimmed) return 0
+  const chars = Array.from(trimmed).length
+  const words = trimmed.split(/\s+/).filter(Boolean).length
+  return Math.max(1, Math.round((chars / 4 + words / 0.75) / 2))
+}
+
+export function getTokenEstimateDetails(text: string): { characters: number; words: number; tokens: number } {
+  const trimmed = text.trim()
+  if (!trimmed) return { characters: 0, words: 0, tokens: 0 }
+  return {
+    characters: Array.from(trimmed).length,
+    words: trimmed.split(/\s+/).filter(Boolean).length,
+    tokens: estimateTokenCount(trimmed),
+  }
+}
+
+// --- Share URL encoding ---
+
+export function encodeWorkspaceToUrl(doc: TopologyDocument): string {
+  const json = JSON.stringify(doc)
+  const base64 = btoa(unescape(encodeURIComponent(json)))
+  const url = new URL(window.location.href)
+  url.searchParams.set('workspace', base64)
+  url.hash = ''
+  return url.toString()
+}
+
+export function decodeWorkspaceFromUrl(): TopologyDocument | null {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const base64 = params.get('workspace')
+    if (!base64) return null
+    const json = decodeURIComponent(escape(atob(base64)))
+    return JSON.parse(json) as TopologyDocument
+  } catch {
+    return null
+  }
+}
+
+// --- Import / Export ---
+
+export function createTopologyDocument(
+  agents: Agent[],
+  edges: Edge[],
+  estimate: EstimateConfig,
+  pricing: WorkspacePricing,
+): TopologyDocument {
+  return {
+    version: '2.1',
+    exportedAt: new Date().toISOString(),
+    topology: { agents, edges: sanitizeEdges(agents, edges) },
+    estimate,
+    pricing,
+  }
+}
+
+export function parseTopologyDocument(value: unknown): {
+  agents: Agent[]
+  edges: Edge[]
+  estimate: EstimateConfig
+  pricing: WorkspacePricing
+} {
+  const doc = asRecord(value)
+  const topo = asRecord(doc.topology)
+  const rawAgents = Array.isArray(topo.agents) ? topo.agents : Array.isArray(doc.agents) ? doc.agents : []
+  const rawEdges = Array.isArray(topo.edges) ? topo.edges : Array.isArray(doc.edges) ? doc.edges : []
+
+  if (rawAgents.length === 0) {
+    throw new Error('The imported file does not contain any agents.')
+  }
+
+  const agents: Agent[] = rawAgents.map((raw, i) => normalizeAgent(raw, i))
+  const edges: Edge[] = rawEdges
+    .map((raw, i) => normalizeEdge(raw, agents, i))
+    .filter((e): e is Edge => e !== null)
+
+  const rawEstimate = asRecord(doc.estimate)
+  const rawPricing = asRecord(doc.pricing)
+
+  const users = Math.max(0, Math.round(toNumber(rawEstimate.users, 0)))
+  const conversationsPerUser = Math.max(0, toNumber(rawEstimate.conversationsPerUser ?? rawEstimate.conversations_per_user, 0))
+  const timeRange = normalizeTimeRange(rawEstimate.timeRange ?? rawEstimate.time_range)
+  const conversationsPerMonth = users > 0 && conversationsPerUser > 0
+    ? computeConversationsPerMonth(users, conversationsPerUser, timeRange)
+    : Math.max(0, Math.round(toNumber(rawEstimate.conversationsPerMonth ?? rawEstimate.monthlyVolume, 0)))
+
+  return {
+    agents,
+    edges: sanitizeEdges(agents, edges),
+    estimate: { users, conversationsPerUser, timeRange, conversationsPerMonth },
+    pricing: normalizePricing(rawPricing),
+  }
+}
+
 // --- Topology layout ---
 
 export function buildTopologyLayout(agents: Agent[], edges: Edge[], width: number, height: number): LayoutNode[] {
   if (agents.length === 0) return []
-
-  const paddingX = 128
-  const paddingY = 84
+  const paddingX = 128, paddingY = 84
 
   if (edges.length === 0) {
     const columns = Math.min(3, agents.length)
@@ -215,76 +490,7 @@ export function buildTopologyLayout(agents: Agent[], edges: Edge[], width: numbe
   })
 }
 
-// --- Token estimation from text ---
-
-export function estimateTokenCount(text: string): number {
-  const trimmed = text.trim()
-  if (!trimmed) return 0
-  // Heuristic: average of chars/4 and words/0.75 — good enough for planning
-  const chars = Array.from(trimmed).length
-  const words = trimmed.split(/\s+/).filter(Boolean).length
-  return Math.max(1, Math.round((chars / 4 + words / 0.75) / 2))
-}
-
-export function getTokenEstimateDetails(text: string): { characters: number; words: number; tokens: number } {
-  const trimmed = text.trim()
-  if (!trimmed) return { characters: 0, words: 0, tokens: 0 }
-  return {
-    characters: Array.from(trimmed).length,
-    words: trimmed.split(/\s+/).filter(Boolean).length,
-    tokens: estimateTokenCount(trimmed),
-  }
-}
-
-// --- Import / Export ---
-
-export function createTopologyDocument(
-  agents: Agent[],
-  edges: Edge[],
-  estimate: EstimateConfig,
-  pricing: WorkspacePricing,
-): TopologyDocument {
-  return {
-    version: '2.0',
-    exportedAt: new Date().toISOString(),
-    topology: { agents, edges: sanitizeEdges(agents, edges) },
-    estimate,
-    pricing,
-  }
-}
-
-export function parseTopologyDocument(value: unknown): {
-  agents: Agent[]
-  edges: Edge[]
-  estimate: EstimateConfig
-  pricing: WorkspacePricing
-} {
-  const doc = asRecord(value)
-  const topo = asRecord(doc.topology)
-  const rawAgents = Array.isArray(topo.agents) ? topo.agents : Array.isArray(doc.agents) ? doc.agents : []
-  const rawEdges = Array.isArray(topo.edges) ? topo.edges : Array.isArray(doc.edges) ? doc.edges : []
-
-  if (rawAgents.length === 0) {
-    throw new Error('The imported file does not contain any agents.')
-  }
-
-  const agents: Agent[] = rawAgents.map((raw, i) => normalizeAgent(raw, i))
-  const edges: Edge[] = rawEdges
-    .map((raw, i) => normalizeEdge(raw, agents, i))
-    .filter((e): e is Edge => e !== null)
-
-  const rawEstimate = asRecord(doc.estimate)
-  const rawPricing = asRecord(doc.pricing)
-
-  return {
-    agents,
-    edges: sanitizeEdges(agents, edges),
-    estimate: {
-      conversationsPerMonth: Math.max(0, Math.round(toNumber(rawEstimate.conversationsPerMonth ?? rawEstimate.monthlyVolume, 0))),
-    },
-    pricing: normalizePricing(rawPricing),
-  }
-}
+// --- Internal helpers ---
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
@@ -299,12 +505,15 @@ function normalizeAgent(value: unknown, index: number): Agent {
     callsPerConversation: Math.max(0, toNumber(s.callsPerConversation ?? s.calls_per_conversation, 1)),
     inputTokensPerCall: Math.max(0, Math.round(toNumber(s.inputTokensPerCall ?? s.input_tokens_per_call ?? s.inputTokens, 500))),
     outputTokensPerCall: Math.max(0, Math.round(toNumber(s.outputTokensPerCall ?? s.output_tokens_per_call ?? s.outputTokens, 200))),
+    historyGrowthFactor: Math.max(1, toNumber(s.historyGrowthFactor ?? s.history_growth_factor, 1)),
+    promptCachePercent: Math.min(100, Math.max(0, toNumber(s.promptCachePercent ?? s.prompt_cache_percent, 0))),
     ragEnabled: Boolean(s.ragEnabled ?? s.rag_enabled ?? false),
     ragChunks: Math.max(0, toNumber(s.ragChunks ?? s.rag_chunks ?? s.averageRetrievedChunks, 0)),
     ragChunkTokens: Math.max(0, Math.round(toNumber(s.ragChunkTokens ?? s.rag_chunk_tokens ?? s.averageChunkTokens, 0))),
     ragEmbeddingTokens: Math.max(0, Math.round(toNumber(s.ragEmbeddingTokens ?? s.rag_embedding_tokens ?? s.embeddingTokensPerRetrieval, 0))),
     mcpCalls: Math.max(0, Math.round(toNumber(s.mcpCalls ?? s.mcp_calls, 0))),
-    mcpTokensPerCall: Math.max(0, Math.round(toNumber(s.mcpTokensPerCall ?? s.mcp_tokens_per_call, 150))),
+    mcpOutputTokensPerCall: Math.max(0, Math.round(toNumber(s.mcpOutputTokensPerCall ?? s.mcpTokensPerCall ?? s.mcp_output_tokens_per_call ?? s.mcp_tokens_per_call, 150))),
+    mcpInputTokensPerCall: Math.max(0, Math.round(toNumber(s.mcpInputTokensPerCall ?? s.mcp_input_tokens_per_call, 100))),
     routingMode: normalizeRoutingMode(s.routingMode ?? s.routing_mode),
   }
 }
@@ -334,6 +543,11 @@ function resolveRef(value: unknown, agents: Agent[]): string | null {
   return byName?.id ?? null
 }
 
+function normalizeTimeRange(value: unknown): TimeRange {
+  if (value === 'day' || value === 'week' || value === 'month' || value === 'year') return value
+  return 'month'
+}
+
 function normalizePricing(value: unknown): WorkspacePricing {
   const s = asRecord(value)
   const rawModels = asRecord(s.models)
@@ -345,10 +559,9 @@ function normalizePricing(value: unknown): WorkspacePricing {
       out: Math.max(0, toNumber(m.out, PRICING[key]?.out ?? 0)),
     }
   }
-  const rawCurrency = String(s.currency ?? 'USD').toUpperCase()
   return {
     models,
     embeddingPricePer1M: Math.max(0, toNumber(s.embeddingPricePer1M, EMBEDDING_PRICE_PER_1M)),
-    currency: rawCurrency === 'EUR' ? 'EUR' : 'USD',
+    currency: 'EUR',
   }
 }

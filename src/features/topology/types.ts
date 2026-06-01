@@ -10,6 +10,10 @@ export type Agent = {
   inputTokensPerCall: number
   /** Average output tokens per LLM call */
   outputTokensPerCall: number
+  /** Multiplier for context growth across turns (1.0 = no growth, 1.5 = 50% growth per turn) */
+  historyGrowthFactor: number
+  /** Percentage of input tokens that hit prompt cache (0-100) */
+  promptCachePercent: number
   /** Whether RAG retrieval is used before calling the LLM */
   ragEnabled: boolean
   /** Number of chunks retrieved per RAG call */
@@ -21,7 +25,9 @@ export type Agent = {
   /** Number of MCP tool calls per conversation */
   mcpCalls: number
   /** Extra output tokens generated per MCP call (tool response overhead) */
-  mcpTokensPerCall: number
+  mcpOutputTokensPerCall: number
+  /** Extra input tokens per MCP call (tool result fed back as context) */
+  mcpInputTokensPerCall: number
   /** Routing mode for outgoing edges */
   routingMode: RoutingMode
 }
@@ -50,7 +56,12 @@ export type WorkspacePricing = {
   currency: CurrencyCode
 }
 
+export type TimeRange = 'day' | 'week' | 'month' | 'year'
+
 export type EstimateConfig = {
+  users: number
+  conversationsPerUser: number
+  timeRange: TimeRange
   conversationsPerMonth: number
 }
 
@@ -60,6 +71,8 @@ export type AgentCostBreakdown = {
   id: string
   name: string
   model: string
+  /** Effective traffic share (1.0 = 100% of conversations hit this agent) */
+  trafficShare: number
   callsPerMonth: number
   inputTokensPerMonth: number
   outputTokensPerMonth: number
@@ -67,7 +80,11 @@ export type AgentCostBreakdown = {
   ragContextTokensPerMonth: number
   totalTokensPerMonth: number
   costPerMonth: number
+  /** Cost saved by prompt caching */
+  cacheSavingsPerMonth: number
 }
+
+export type ConfidenceLevel = 'high' | 'medium' | 'low'
 
 export type EstimateSummary = {
   totalTokensPerMonth: number
@@ -76,6 +93,12 @@ export type EstimateSummary = {
   totalOutputTokens: number
   totalEmbeddingTokens: number
   costPerConversation: number
+  /** Best case (with maximum caching, minimum traffic) */
+  bestCaseCostPerMonth: number
+  /** Worst case (no caching, maximum traffic, history growth) */
+  worstCaseCostPerMonth: number
+  confidence: ConfidenceLevel
+  confidenceReasons: string[]
   agents: AgentCostBreakdown[]
 }
 

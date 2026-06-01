@@ -139,7 +139,13 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
               const sy = src.y + Math.sin(angle) * (nodeHeight / 2 - 8)
               const ex = tgt.x - Math.cos(angle) * (nodeWidth / 2 - 8)
               const ey = tgt.y - Math.sin(angle) * (nodeHeight / 2 - 8)
-              return <line key={edge.id} x1={sx} y1={sy} x2={ex} y2={ey} stroke={connected ? '#0f766e' : '#8a97ac'} strokeWidth={2} opacity={opacity} markerEnd="url(#arrow)" />
+              return (
+                <g key={edge.id} opacity={opacity}>
+                  <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={connected ? '#0f766e' : '#8a97ac'} strokeWidth={2} markerEnd="url(#arrow)" />
+                  <rect x={(sx + ex) / 2 - 18} y={(sy + ey) / 2 - 10} width="36" height="18" rx="9" fill="#fff" stroke={connected ? '#0f766e' : '#dbe3ef'} strokeWidth="0.8" />
+                  <text x={(sx + ex) / 2} y={(sy + ey) / 2 + 4} fontSize="10" fontWeight="700" fill={connected ? '#0f766e' : '#60708f'} textAnchor="middle">{`${Math.round(edge.weight * 100)}%`}</text>
+                </g>
+              )
             })}
             {/* Nodes */}
             {layout.map((node) => {
@@ -154,7 +160,9 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
                   <text x="14" y="28" fontSize="13" fontWeight="700" fill="#132238">{node.agent.name.slice(0, 20)}</text>
                   <text x="14" y="46" fontSize="11" fill="#60708f">{getModelLabel(node.agent.model)}</text>
                   <text x="14" y="66" fontSize="10" fill="#7b8799">{`${node.agent.callsPerConversation} calls · ${node.agent.inputTokensPerCall}/${node.agent.outputTokensPerCall} tok`}</text>
-                  <text x="14" y="84" fontSize="10" fill="#7b8799">{`${incoming.length} in · ${outgoing.length} out`}</text>
+                  <text x="14" y="84" fontSize="10" fill={node.agent.mcpCalls > 0 ? '#d97706' : '#7b8799'}>{node.agent.mcpCalls > 0 ? `MCP ×${node.agent.mcpCalls} · ${incoming.length} in · ${outgoing.length} out` : `${incoming.length} in · ${outgoing.length} out`}</text>
+                  {node.agent.mcpCalls > 0 && <rect x={nodeWidth - 42} y={nodeHeight - 22} width="34" height="16" rx="8" fill="#fef3c7" stroke="#d97706" strokeWidth="0.8" />}
+                  {node.agent.mcpCalls > 0 && <text x={nodeWidth - 25} y={nodeHeight - 10} fontSize="9" fontWeight="700" fill="#92400e" textAnchor="middle">{`MCP`}</text>}
                 </g>
               )
             })}

@@ -1,8 +1,5 @@
 import { ChangeEvent, useMemo, useRef, useState } from 'react'
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -64,6 +61,7 @@ import {
   formatMetricNumber,
   getModelLabel,
   getPricing,
+  getTokenEstimateDetails,
   inferEntryAgents,
   parseTopologyDocument,
   sanitizeEdges,
@@ -72,8 +70,10 @@ import {
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { TokiLogo } from './components/atoms/TokiLogo'
 import { TopologyCanvas } from './components/organisms/TopologyCanvas'
+import { TokenToolInlineButton } from './components/TokenTool'
 
 const PAYPAL_DONATE_URL = (import.meta.env.VITE_PAYPAL_DONATE_URL ?? '').trim()
+const APP_VERSION = '2.0.0'
 
 export default function App() {
   const isPhone = useMediaQuery('(max-width:600px)')
@@ -85,10 +85,11 @@ export default function App() {
   const [pricing, setPricing] = useLocalStorage<WorkspacePricing>('v2:pricing', createDefaultWorkspacePricing)
 
   // UI state
-  const [activeTab, setActiveTab] = useState<'calculator' | 'topology' | 'pricing'>('calculator')
+  const [activeTab, setActiveTab] = useState<'calculator' | 'topology' | 'pricing' | 'token-tool'>('calculator')
   const [topoSelectedId, setTopoSelectedId] = useState<string | null>(null)
   const [snackbar, setSnackbar] = useState<{ severity: 'success' | 'error' | 'info'; message: string } | null>(null)
   const [samplesAnchor, setSamplesAnchor] = useState<HTMLElement | null>(null)
+  const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // Derived
@@ -129,9 +130,9 @@ export default function App() {
 
   const resetWorkspace = () => {
     if (!window.confirm('Clear all agents, connections, and settings?')) return
-    const keys = Object.keys(localStorage).filter((k) => k.startsWith('toki:'))
-    keys.forEach((k) => localStorage.removeItem(k))
-    window.location.reload()
+    // Clear storage and reload in one shot — don't let React re-render and write state back
+    Object.keys(localStorage).filter((k) => k.startsWith('toki:')).forEach((k) => localStorage.removeItem(k))
+    window.location.replace(window.location.pathname)
   }
 
   const loadSample = (sampleId: string) => {
@@ -146,15 +147,75 @@ export default function App() {
   const exportWorkspace = () => {
     const doc = createTopologyDocument(agents, safeEdges, estimateConfig, pricing)
     const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })
+    downloadBlob(blob, `toki-${new Date().toISOString().slice(0, 10)}.json`)
+    setSnackbar({ severity: 'success', message: 'Workspace exported as JSON.' })
+  }
+
+  const exportCsv = () => {
+    if (agents.length === 0) { setSnackbar({ severity: 'info', message: 'Add agents before exporting.' }); return }
+    const headers = ['Agent', 'Model', 'Calls/Conv', 'Input Tok/Call', 'Output Tok/Call', 'MCP Calls', 'MCP Tok/Call', 'RAG Chunks', 'RAG Tok/Chunk', 'Embed Tok', 'Calls/Month', 'Input Tok/Month', 'Output Tok/Month', 'Embed Tok/Month', 'Total Tok/Month', 'Cost/Month']
+    const rows = estimate.agents.map((a) => {
+      const agent = agents.find((ag) => ag.id === a.id)
+      return [
+        a.name, a.model, agent?.callsPerConversation ?? 0, agent?.inputTokensPerCall ?? 0, agent?.outputTokensPerCall ?? 0,
+        agent?.mcpCalls ?? 0, agent?.mcpTokensPerCall ?? 0, agent?.ragChunks ?? 0, agent?.ragChunkTokens ?? 0, agent?.ragEmbeddingTokens ?? 0,
+        a.callsPerMonth, a.inputTokensPerMonth, a.outputTokensPerMonth, a.embeddingTokensPerMonth, a.totalTokensPerMonth, a.costPerMonth.toFixed(4),
+      ]
+    })
+    const totalRow = ['TOTAL', '', '', '', '', '', '', '', '', '', '', estimate.totalInputTokens, estimate.totalOutputTokens, estimate.totalEmbeddingTokens, estimate.totalTokensPerMonth, estimate.totalCostPerMonth.toFixed(4)]
+    const csv = [headers, ...rows, totalRow].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
+    downloadBlob(new Blob([csv], { type: 'text/csv' }), `toki-estimate-${new Date().toISOString().slice(0, 10)}.csv`)
+    setSnackbar({ severity: 'success', message: 'Estimate exported as CSV.' })
+  }
+
+  const exportExcel = () => {
+    if (agents.length === 0) { setSnackbar({ severity: 'info', message: 'Add agents before exporting.' }); return }
+    // Generate an XML Spreadsheet (Excel-compatible .xls) without external dependencies
+    const headers = ['Agent', 'Model', 'Calls/Conv', 'Input Tok/Call', 'Output Tok/Call', 'MCP Calls', 'MCP Tok/Call', 'RAG Chunks', 'RAG Tok/Chunk', 'Embed Tok', 'Calls/Month', 'Input Tok/Month', 'Output Tok/Month', 'Embed Tok/Month', 'Total Tok/Month', 'Cost/Month (' + pricing.currency + ')']
+    const rows = estimate.agents.map((a) => {
+      const agent = agents.find((ag) => ag.id === a.id)
+      return [
+        a.name, a.model, agent?.callsPerConversation ?? 0, agent?.inputTokensPerCall ?? 0, agent?.outputTokensPerCall ?? 0,
+        agent?.mcpCalls ?? 0, agent?.mcpTokensPerCall ?? 0, agent?.ragChunks ?? 0, agent?.ragChunkTokens ?? 0, agent?.ragEmbeddingTokens ?? 0,
+        a.callsPerMonth, a.inputTokensPerMonth, a.outputTokensPerMonth, a.embeddingTokensPerMonth, a.totalTokensPerMonth, a.costPerMonth,
+      ]
+    })
+    const totalRow = ['TOTAL', '', '', '', '', '', '', '', '', '', '', estimate.totalInputTokens, estimate.totalOutputTokens, estimate.totalEmbeddingTokens, estimate.totalTokensPerMonth, estimate.totalCostPerMonth]
+
+    const escXml = (v: unknown) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const toCell = (v: unknown) => typeof v === 'number' ? `<Cell><Data ss:Type="Number">${v}</Data></Cell>` : `<Cell><Data ss:Type="String">${escXml(v)}</Data></Cell>`
+    const toRow = (cells: unknown[]) => `<Row>${cells.map(toCell).join('')}</Row>`
+
+    const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+<Worksheet ss:Name="Toki Estimate"><Table>
+${toRow(headers)}
+${rows.map(toRow).join('\n')}
+${toRow(totalRow)}
+</Table></Worksheet>
+<Worksheet ss:Name="Summary"><Table>
+<Row><Cell><Data ss:Type="String">Metric</Data></Cell><Cell><Data ss:Type="String">Value</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">Conversations/Month</Data></Cell><Cell><Data ss:Type="Number">${estimateConfig.conversationsPerMonth}</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">Total Tokens/Month</Data></Cell><Cell><Data ss:Type="Number">${estimate.totalTokensPerMonth}</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">Total Cost/Month (${pricing.currency})</Data></Cell><Cell><Data ss:Type="Number">${estimate.totalCostPerMonth}</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">Cost/Conversation (${pricing.currency})</Data></Cell><Cell><Data ss:Type="Number">${estimate.costPerConversation}</Data></Cell></Row>
+<Row><Cell><Data ss:Type="String">Agents</Data></Cell><Cell><Data ss:Type="Number">${agents.length}</Data></Cell></Row>
+</Table></Worksheet>
+</Workbook>`
+
+    downloadBlob(new Blob([xml], { type: 'application/vnd.ms-excel' }), `toki-estimate-${new Date().toISOString().slice(0, 10)}.xls`)
+    setSnackbar({ severity: 'success', message: 'Estimate exported as Excel.' })
+  }
+
+  function downloadBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `toki-${new Date().toISOString().slice(0, 10)}.json`
+    link.download = filename
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
-    setSnackbar({ severity: 'success', message: 'Workspace exported.' })
   }
 
   const importWorkspace = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -193,9 +254,9 @@ export default function App() {
   // --- Render ---
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f4f6f8' }}>
-      {/* Header */}
-      <Paper elevation={0} sx={{ px: { xs: 2, md: 3 }, py: 1.5, background: 'linear-gradient(135deg, #0b1523 0%, #102238 54%, #143149 100%)', color: '#f7fafc' }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: '#f4f6f8', display: 'flex', flexDirection: 'column' }}>
+      {/* Header — sticky */}
+      <Paper elevation={1} sx={{ px: { xs: 2, md: 3 }, py: 1.5, background: 'linear-gradient(135deg, #0b1523 0%, #102238 54%, #143149 100%)', color: '#f7fafc', position: 'sticky', top: 0, zIndex: 1100 }}>
         <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <TokiLogo light caption="Token Cost Calculator" />
           <Stack direction="row" spacing={0.5}>
@@ -205,37 +266,51 @@ export default function App() {
         </Stack>
       </Paper>
 
-      {/* Toolbar */}
-      <Paper elevation={0} sx={{ px: { xs: 2, md: 3 }, py: 1, borderBottom: '1px solid', borderColor: 'divider', bgcolor: '#fff' }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-          <input ref={fileInputRef} hidden type="file" accept=".json" onChange={importWorkspace} />
-          <Button size="small" startIcon={<FileUploadOutlined />} onClick={() => fileInputRef.current?.click()}>Import</Button>
-          <Button size="small" startIcon={<FileDownloadOutlined />} onClick={exportWorkspace}>Export</Button>
-          <Divider orientation="vertical" flexItem />
-          <Button size="small" startIcon={<ScienceRounded />} onClick={(e) => setSamplesAnchor(e.currentTarget)}>Samples</Button>
-          <Menu
-            anchorEl={samplesAnchor}
-            open={Boolean(samplesAnchor)}
-            onClose={() => setSamplesAnchor(null)}
-            slotProps={{ paper: { sx: { maxWidth: 380 } } }}
-          >
-            {WORKSPACE_SAMPLES.map((s) => (
-              <MenuItem key={s.id} onClick={() => { loadSample(s.id); setSamplesAnchor(null) }} sx={{ whiteSpace: 'normal', py: 1.25 }}>
-                <ListItemText
-                  primary={s.label}
-                  secondary={s.description}
-                  slotProps={{ primary: { variant: 'subtitle2' }, secondary: { variant: 'caption' } }}
-                />
+      {/* Toolbar — sticky below header */}
+      <Paper elevation={0} sx={{ px: { xs: 1.5, md: 3 }, py: 0.75, borderBottom: '1px solid', borderColor: 'divider', bgcolor: '#fff', position: 'sticky', top: { xs: 52, md: 56 }, zIndex: 1099 }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'center' } }}>
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <input ref={fileInputRef} hidden type="file" accept=".json" onChange={importWorkspace} />
+            <Button size="small" startIcon={<FileUploadOutlined />} onClick={() => fileInputRef.current?.click()}>Import</Button>
+            <Button size="small" startIcon={<FileDownloadOutlined />} onClick={(e) => setExportAnchor(e.currentTarget)}>Export</Button>
+            <Menu anchorEl={exportAnchor} open={Boolean(exportAnchor)} onClose={() => setExportAnchor(null)}>
+              <MenuItem onClick={() => { exportWorkspace(); setExportAnchor(null) }}>
+                <ListItemText primary="Workspace (JSON)" secondary="Full workspace with agents, connections, and settings" slotProps={{ secondary: { variant: 'caption' } }} />
               </MenuItem>
-            ))}
-          </Menu>
-          <Divider orientation="vertical" flexItem />
-          <Button size="small" color="error" startIcon={<DeleteForeverRounded />} onClick={resetWorkspace}>Reset</Button>
+              <MenuItem onClick={() => { exportCsv(); setExportAnchor(null) }}>
+                <ListItemText primary="Estimate (CSV)" secondary="Cost breakdown table for spreadsheets" slotProps={{ secondary: { variant: 'caption' } }} />
+              </MenuItem>
+              <MenuItem onClick={() => { exportExcel(); setExportAnchor(null) }}>
+                <ListItemText primary="Estimate (Excel)" secondary="Excel workbook with estimate and summary sheets" slotProps={{ secondary: { variant: 'caption' } }} />
+              </MenuItem>
+            </Menu>
+            <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
+            <Button size="small" startIcon={<ScienceRounded />} onClick={(e) => setSamplesAnchor(e.currentTarget)}>Samples</Button>
+            <Menu
+              anchorEl={samplesAnchor}
+              open={Boolean(samplesAnchor)}
+              onClose={() => setSamplesAnchor(null)}
+              slotProps={{ paper: { sx: { maxWidth: 380 } } }}
+            >
+              {WORKSPACE_SAMPLES.map((s) => (
+                <MenuItem key={s.id} onClick={() => { loadSample(s.id); setSamplesAnchor(null) }} sx={{ whiteSpace: 'normal', py: 1.25 }}>
+                  <ListItemText
+                    primary={s.label}
+                    secondary={s.description}
+                    slotProps={{ primary: { variant: 'subtitle2' }, secondary: { variant: 'caption' } }}
+                  />
+                </MenuItem>
+              ))}
+            </Menu>
+            <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
+            <Button size="small" color="error" startIcon={<DeleteForeverRounded />} onClick={resetWorkspace}>Reset</Button>
+          </Stack>
           <Box sx={{ flexGrow: 1 }} />
-          <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0 } }}>
+          <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} variant={isPhone ? 'scrollable' : 'standard'} scrollButtons="auto" sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0, px: { xs: 1.5, sm: 2 }, fontSize: { xs: 12, sm: 13 } } }}>
             <Tab label="Calculator" value="calculator" />
             <Tab label="Topology" value="topology" />
             <Tab label="Pricing" value="pricing" />
+            <Tab label="Token Tool" value="token-tool" />
           </Tabs>
         </Stack>
       </Paper>
@@ -423,6 +498,9 @@ export default function App() {
               onSelectAgent={setTopoSelectedId}
             />
           </Paper>
+        ) : activeTab === 'token-tool' ? (
+          /* Token Tool tab — inline version */
+          <TokenToolTab />
         ) : (
           /* Pricing tab */
           <Paper sx={{ p: 2.5 }}>
@@ -501,6 +579,18 @@ export default function App() {
         )}
       </Container>
 
+      {/* Footer */}
+      <Box component="footer" sx={{ mt: 'auto', py: 2, px: 3, borderTop: '1px solid', borderColor: 'divider', bgcolor: '#fff' }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}>
+          <Typography variant="caption" color="text.secondary">
+            Toki v{APP_VERSION} — Token cost calculator for agentic systems
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Token estimates use a character + word heuristic (~10% of tiktoken accuracy)
+          </Typography>
+        </Stack>
+      </Box>
+
       <Snackbar open={Boolean(snackbar)} autoHideDuration={3500} onClose={() => setSnackbar(null)} anchorOrigin={{ vertical: isPhone ? 'top' : 'bottom', horizontal: 'center' }}>
         <Alert onClose={() => setSnackbar(null)} severity={snackbar?.severity ?? 'info'} variant="filled" sx={{ borderRadius: 12 }}>
           {snackbar?.message ?? ''}
@@ -510,7 +600,51 @@ export default function App() {
   )
 }
 
-// --- Agent Card Component ---
+// --- Token Tool Tab (inline) ---
+
+function TokenToolTab() {
+  const [text, setText] = useState('')
+  const details = getTokenEstimateDetails(text)
+
+  return (
+    <Paper sx={{ p: { xs: 2, md: 3 }, maxWidth: 800 }}>
+      <Typography variant="h6" sx={{ mb: 0.5 }}>Token Converter</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+        Paste any text, JSON, prompt template, or system message to estimate its token count. Use this to figure out the right values for your agent input/output token fields.
+      </Typography>
+
+      <TextField
+        fullWidth
+        multiline
+        minRows={8}
+        maxRows={20}
+        placeholder={'Paste your text here...\n\nExamples:\n- A system prompt\n- A JSON API response\n- A user message with context\n- A retrieved document chunk'}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        sx={{ mb: 2 }}
+      />
+
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
+        <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap' }}>
+          <Chip label={`${details.tokens.toLocaleString()} tokens`} color="primary" sx={{ fontWeight: 700, fontSize: 15 }} />
+          <Chip label={`${details.words.toLocaleString()} words`} variant="outlined" />
+          <Chip label={`${details.characters.toLocaleString()} characters`} variant="outlined" />
+        </Stack>
+        {text.length > 0 && (
+          <Button size="small" onClick={() => setText('')}>Clear</Button>
+        )}
+      </Stack>
+
+      <Divider sx={{ my: 2.5 }} />
+
+      <Typography variant="caption" color="text.secondary">
+        Token estimates use a lightweight character + word heuristic. Accuracy is within ~10% of tiktoken for English text. Good enough for cost planning — not for exact API billing.
+      </Typography>
+    </Paper>
+  )
+}
+
+// --- Agent Card Component (collapsible) ---
 
 function AgentCard(props: {
   agent: Agent
@@ -520,87 +654,133 @@ function AgentCard(props: {
   onRemove: () => void
 }) {
   const { agent } = props
+  const [expanded, setExpanded] = useState(true)
 
   return (
     <Card variant="outlined" sx={{ borderColor: 'rgba(19, 34, 56, 0.1)' }}>
-      <CardContent sx={{ pb: '16px !important' }}>
-        {/* Header row */}
-        <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-            <Box>
-              <Typography variant="subtitle1">{agent.name}</Typography>
-              <Stack direction="row" spacing={0.75} sx={{ mt: 0.5 }}>
-                <Chip size="small" label={getModelLabel(agent.model)} variant="outlined" />
-                {agent.ragEnabled && <Chip size="small" label="RAG" color="success" variant="outlined" />}
-                {agent.mcpCalls > 0 && <Chip size="small" label={`MCP ×${agent.mcpCalls}`} color="secondary" variant="outlined" />}
-              </Stack>
-            </Box>
-          </Stack>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <Chip label={props.formatCost(props.costPerMonth) + '/mo'} color="primary" size="small" />
-            <IconButton size="small" color="error" onClick={props.onRemove} aria-label="Remove agent">
-              <DeleteOutlineRounded fontSize="small" />
-            </IconButton>
-          </Stack>
+      {/* Collapsed header — always visible */}
+      <Stack
+        direction="row"
+        sx={{ px: 2, py: 1.5, justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+          <IconButton size="small" sx={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+            <ExpandMoreRounded fontSize="small" />
+          </IconButton>
+          <Box>
+            <Typography variant="subtitle1" sx={{ lineHeight: 1.3 }}>{agent.name}</Typography>
+            <Stack direction="row" spacing={0.75} sx={{ mt: 0.25 }}>
+              <Chip size="small" label={getModelLabel(agent.model)} variant="outlined" sx={{ height: 20, fontSize: 11 }} />
+              {agent.ragEnabled && <Chip size="small" label="RAG" color="success" variant="outlined" sx={{ height: 20, fontSize: 11 }} />}
+              {agent.mcpCalls > 0 && <Chip size="small" label={`MCP ×${agent.mcpCalls}`} color="secondary" variant="outlined" sx={{ height: 20, fontSize: 11 }} />}
+              <Chip size="small" label={`${agent.callsPerConversation} calls/conv`} variant="outlined" sx={{ height: 20, fontSize: 11 }} />
+            </Stack>
+          </Box>
         </Stack>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+          <Chip label={props.formatCost(props.costPerMonth) + '/mo'} color="primary" size="small" />
+          <IconButton size="small" color="error" onClick={props.onRemove} aria-label="Remove agent">
+            <DeleteOutlineRounded fontSize="small" />
+          </IconButton>
+        </Stack>
+      </Stack>
 
-        {/* Core fields */}
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField fullWidth size="small" label="Name" value={agent.name} onChange={(e) => props.onUpdate({ name: e.target.value })} />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Model</InputLabel>
-              <Select label="Model" value={agent.model} onChange={(e) => props.onUpdate({ model: String(e.target.value) })}>
-                {MODEL_OPTIONS.map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField fullWidth size="small" type="number" label="LLM calls / conversation" value={agent.callsPerConversation} slotProps={{ htmlInput: { min: 0, step: 1 } }} onChange={(e) => props.onUpdate({ callsPerConversation: Math.max(0, toNumber(e.target.value, agent.callsPerConversation)) })} />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6 }}>
-            <TextField fullWidth size="small" type="number" label="Input tokens / call" value={agent.inputTokensPerCall} onChange={(e) => props.onUpdate({ inputTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, agent.inputTokensPerCall))) })} />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6 }}>
-            <TextField fullWidth size="small" type="number" label="Output tokens / call" value={agent.outputTokensPerCall} onChange={(e) => props.onUpdate({ outputTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, agent.outputTokensPerCall))) })} />
-          </Grid>
-        </Grid>
-
-        {/* RAG section */}
-        <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(248, 250, 252, 0.8)', borderRadius: 1.5 }}>
-          <FormControlLabel
-            control={<Switch size="small" checked={agent.ragEnabled} onChange={(e) => props.onUpdate({ ragEnabled: e.target.checked, ragChunks: e.target.checked && agent.ragChunks === 0 ? 4 : agent.ragChunks, ragChunkTokens: e.target.checked && agent.ragChunkTokens === 0 ? 150 : agent.ragChunkTokens, ragEmbeddingTokens: e.target.checked && agent.ragEmbeddingTokens === 0 ? 60 : agent.ragEmbeddingTokens })} />}
-            label={<Typography variant="body2" sx={{ fontWeight: 600 }}>RAG retrieval</Typography>}
-          />
-          {agent.ragEnabled && (
-            <Grid container spacing={1.5} sx={{ mt: 0.5 }}>
-              <Grid size={{ xs: 4 }}>
-                <TextField fullWidth size="small" type="number" label="Chunks" value={agent.ragChunks} onChange={(e) => props.onUpdate({ ragChunks: Math.max(0, toNumber(e.target.value, agent.ragChunks)) })} />
-              </Grid>
-              <Grid size={{ xs: 4 }}>
-                <TextField fullWidth size="small" type="number" label="Tokens/chunk" value={agent.ragChunkTokens} onChange={(e) => props.onUpdate({ ragChunkTokens: Math.max(0, Math.round(toNumber(e.target.value, agent.ragChunkTokens))) })} />
-              </Grid>
-              <Grid size={{ xs: 4 }}>
-                <TextField fullWidth size="small" type="number" label="Embed tokens" value={agent.ragEmbeddingTokens} onChange={(e) => props.onUpdate({ ragEmbeddingTokens: Math.max(0, Math.round(toNumber(e.target.value, agent.ragEmbeddingTokens))) })} />
-              </Grid>
+      {/* Expandable body */}
+      <Collapse in={expanded}>
+        <CardContent sx={{ pt: 0, pb: '16px !important' }}>
+          {/* Core fields */}
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth size="small" label="Name" value={agent.name} onChange={(e) => props.onUpdate({ name: e.target.value })} />
             </Grid>
-          )}
-        </Box>
-
-        {/* MCP section */}
-        <Box sx={{ mt: 1.5, p: 1.5, bgcolor: 'rgba(248, 250, 252, 0.8)', borderRadius: 1.5 }}>
-          <Grid container spacing={1.5} sx={{ alignItems: 'center' }}>
-            <Grid size={{ xs: 6 }}>
-              <TextField fullWidth size="small" type="number" label="MCP tool calls / conversation" value={agent.mcpCalls} onChange={(e) => props.onUpdate({ mcpCalls: Math.max(0, Math.round(toNumber(e.target.value, agent.mcpCalls))) })} />
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Model</InputLabel>
+                <Select label="Model" value={agent.model} onChange={(e) => props.onUpdate({ model: String(e.target.value) })}>
+                  {MODEL_OPTIONS.map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+                </Select>
+              </FormControl>
             </Grid>
-            <Grid size={{ xs: 6 }}>
-              <TextField fullWidth size="small" type="number" label="Extra tokens / MCP call" value={agent.mcpTokensPerCall} disabled={agent.mcpCalls === 0} onChange={(e) => props.onUpdate({ mcpTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, agent.mcpTokensPerCall))) })} />
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField fullWidth size="small" type="number" label="LLM calls / conversation" value={agent.callsPerConversation} slotProps={{ htmlInput: { min: 0, step: 1 } }} onChange={(e) => props.onUpdate({ callsPerConversation: Math.max(0, toNumber(e.target.value, agent.callsPerConversation)) })} />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Stack direction="row" sx={{ alignItems: 'flex-start' }}>
+                <TextField fullWidth size="small" type="number" label="Input tokens / call" value={agent.inputTokensPerCall} helperText="Prompt + context sent to the model per call." onChange={(e) => props.onUpdate({ inputTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, agent.inputTokensPerCall))) })} />
+                <TokenToolInlineButton onResult={(tokens) => props.onUpdate({ inputTokensPerCall: tokens })} label="Set as input tokens" />
+              </Stack>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Stack direction="row" sx={{ alignItems: 'flex-start' }}>
+                <TextField fullWidth size="small" type="number" label="Output tokens / call" value={agent.outputTokensPerCall} helperText="Completion tokens generated per call." onChange={(e) => props.onUpdate({ outputTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, agent.outputTokensPerCall))) })} />
+                <TokenToolInlineButton onResult={(tokens) => props.onUpdate({ outputTokensPerCall: tokens })} label="Set as output tokens" />
+              </Stack>
             </Grid>
           </Grid>
-        </Box>
-      </CardContent>
+
+          {/* MCP Tools section */}
+          <Box sx={{ mt: 2, p: 2, bgcolor: 'rgba(217, 119, 6, 0.03)', border: '1px solid rgba(217, 119, 6, 0.12)', borderRadius: 1.5 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1.5, color: 'secondary.dark' }}>MCP Tool Calls</Typography>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <TextField
+                  fullWidth size="small" type="number"
+                  label="Tool calls / conversation"
+                  value={agent.mcpCalls}
+                  helperText="How many MCP tools this agent invokes per conversation."
+                  onChange={(e) => props.onUpdate({ mcpCalls: Math.max(0, Math.round(toNumber(e.target.value, agent.mcpCalls))) })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <TextField
+                  fullWidth size="small" type="number"
+                  label="Extra output tokens / tool call"
+                  value={agent.mcpTokensPerCall}
+                  disabled={agent.mcpCalls === 0}
+                  helperText="Additional output tokens from each tool response."
+                  onChange={(e) => props.onUpdate({ mcpTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, agent.mcpTokensPerCall))) })}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Box sx={{ pt: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {agent.mcpCalls > 0
+                      ? `Adds ${(agent.mcpCalls * agent.mcpTokensPerCall).toLocaleString()} output tokens/conversation from tool responses.`
+                      : 'No tool calls configured. Set calls > 0 to enable.'}
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
+          </Box>
+
+          {/* RAG section */}
+          <Box sx={{ mt: 2, p: 2, bgcolor: 'rgba(47, 133, 90, 0.03)', border: '1px solid rgba(47, 133, 90, 0.12)', borderRadius: 1.5 }}>
+            <FormControlLabel
+              control={<Switch size="small" checked={agent.ragEnabled} onChange={(e) => props.onUpdate({ ragEnabled: e.target.checked, ragChunks: e.target.checked && agent.ragChunks === 0 ? 4 : agent.ragChunks, ragChunkTokens: e.target.checked && agent.ragChunkTokens === 0 ? 150 : agent.ragChunkTokens, ragEmbeddingTokens: e.target.checked && agent.ragEmbeddingTokens === 0 ? 60 : agent.ragEmbeddingTokens })} />}
+              label={<Typography variant="subtitle2" sx={{ color: 'success.dark' }}>RAG Retrieval</Typography>}
+            />
+            {agent.ragEnabled && (
+              <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <TextField fullWidth size="small" type="number" label="Chunks retrieved / call" value={agent.ragChunks} helperText="Number of document chunks fetched." onChange={(e) => props.onUpdate({ ragChunks: Math.max(0, toNumber(e.target.value, agent.ragChunks)) })} />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <TextField fullWidth size="small" type="number" label="Tokens per chunk" value={agent.ragChunkTokens} helperText="Average size of each retrieved chunk." onChange={(e) => props.onUpdate({ ragChunkTokens: Math.max(0, Math.round(toNumber(e.target.value, agent.ragChunkTokens))) })} />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <TextField fullWidth size="small" type="number" label="Embedding tokens / retrieval" value={agent.ragEmbeddingTokens} helperText="Tokens used for the embedding query." onChange={(e) => props.onUpdate({ ragEmbeddingTokens: Math.max(0, Math.round(toNumber(e.target.value, agent.ragEmbeddingTokens))) })} />
+                </Grid>
+              </Grid>
+            )}
+            {!agent.ragEnabled && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                Enable to add retrieval-augmented context tokens to the input cost.
+              </Typography>
+            )}
+          </Box>
+        </CardContent>
+      </Collapse>
     </Card>
   )
 }

@@ -215,6 +215,27 @@ export function buildTopologyLayout(agents: Agent[], edges: Edge[], width: numbe
   })
 }
 
+// --- Token estimation from text ---
+
+export function estimateTokenCount(text: string): number {
+  const trimmed = text.trim()
+  if (!trimmed) return 0
+  // Heuristic: average of chars/4 and words/0.75 — good enough for planning
+  const chars = Array.from(trimmed).length
+  const words = trimmed.split(/\s+/).filter(Boolean).length
+  return Math.max(1, Math.round((chars / 4 + words / 0.75) / 2))
+}
+
+export function getTokenEstimateDetails(text: string): { characters: number; words: number; tokens: number } {
+  const trimmed = text.trim()
+  if (!trimmed) return { characters: 0, words: 0, tokens: 0 }
+  return {
+    characters: Array.from(trimmed).length,
+    words: trimmed.split(/\s+/).filter(Boolean).length,
+    tokens: estimateTokenCount(trimmed),
+  }
+}
+
 // --- Import / Export ---
 
 export function createTopologyDocument(

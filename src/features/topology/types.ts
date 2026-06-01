@@ -1,21 +1,28 @@
+// --- Core domain types ---
+
 export type Agent = {
   id: string
   name: string
   model: string
-  inputTokens: number
-  outputTokens: number
-  fixedPromptTokens: number
-  historyCarryoverTokens: number
+  /** Average LLM calls per conversation that hit this agent */
+  callsPerConversation: number
+  /** Average input tokens per LLM call */
+  inputTokensPerCall: number
+  /** Average output tokens per LLM call */
+  outputTokensPerCall: number
+  /** Whether RAG retrieval is used before calling the LLM */
   ragEnabled: boolean
-  retrievalMultiplier: number
-  averageRetrievedChunks: number
-  averageChunkTokens: number
-  embeddingTokensPerRetrieval: number
+  /** Number of chunks retrieved per RAG call */
+  ragChunks: number
+  /** Average tokens per retrieved chunk */
+  ragChunkTokens: number
+  /** Embedding tokens used per retrieval */
+  ragEmbeddingTokens: number
+  /** Number of MCP tool calls per conversation */
   mcpCalls: number
-  toolMultiplier: number
-  retryProbability: number
-  fallbackProbability: number
-  fallbackModel: string
+  /** Extra output tokens generated per MCP call (tool response overhead) */
+  mcpTokensPerCall: number
+  /** Routing mode for outgoing edges */
   routingMode: RoutingMode
 }
 
@@ -26,22 +33,7 @@ export type Edge = {
   weight: number
 }
 
-export type ScenarioState = {
-  iterations: number
-  maxDepth: number
-  loadMultiplier: number
-  virtualUsers: number
-  rampUpSeconds: number
-  thinkTimeMs: number
-  durationSeconds: number
-  targetThroughput: number
-  throughputPeriodSeconds: number
-  scheduleMode: ScheduleMode
-}
-
 export type RoutingMode = 'fanout' | 'weighted' | 'interleave'
-
-export type ScheduleMode = 'closed' | 'open'
 
 export type CurrencyCode = 'USD' | 'EUR'
 
@@ -58,95 +50,36 @@ export type WorkspacePricing = {
   currency: CurrencyCode
 }
 
-export type ListenerView = 'summary' | 'aggregate'
+export type EstimateConfig = {
+  conversationsPerMonth: number
+}
 
-export type PlanNodeKey = 'test-plan' | 'thread-group' | 'samplers' | 'controllers' | 'listeners'
+// --- Cost calculation result ---
 
-export type SimulationSummary = {
+export type AgentCostBreakdown = {
   id: string
   name: string
   model: string
-  visits: number
-  expectedAttempts: number
-  inputTokens: number
-  outputTokens: number
-  embeddingTokens: number
-  retrievedContextTokens: number
-  tokens: number
-  cost: number
-  retryCost: number
-  fallbackCost: number
-  avgTokensPerVisit: number
+  callsPerMonth: number
+  inputTokensPerMonth: number
+  outputTokensPerMonth: number
+  embeddingTokensPerMonth: number
+  ragContextTokensPerMonth: number
+  totalTokensPerMonth: number
+  costPerMonth: number
 }
 
-export type SimulationReport = {
-  totalTokens: number
-  totalCost: number
+export type EstimateSummary = {
+  totalTokensPerMonth: number
+  totalCostPerMonth: number
   totalInputTokens: number
   totalOutputTokens: number
   totalEmbeddingTokens: number
-  totalRetrievedContextTokens: number
-  plannedStarts: number
-  plannedDurationSeconds: number
-  throughputPerMinute: number
-  summary: SimulationSummary[]
+  costPerConversation: number
+  agents: AgentCostBreakdown[]
 }
 
-export type TraceSummary = {
-  id: string
-  name: string
-  model: string
-  visits: number
-  inputTokens: number
-  outputTokens: number
-  embeddingTokens: number
-  tokens: number
-  cost: number
-}
-
-export type TraceReport = {
-  importedAt: string
-  totalTokens: number
-  totalCost: number
-  totalVisits: number
-  summary: TraceSummary[]
-}
-
-export type TraceComparisonRow = {
-  id: string
-  name: string
-  forecastVisits: number
-  actualVisits: number
-  visitDelta: number
-  forecastTokens: number
-  actualTokens: number
-  tokenDelta: number
-  forecastCost: number
-  actualCost: number
-  costDelta: number
-}
-
-export type TraceComparisonReport = {
-  totalForecastTokens: number
-  totalActualTokens: number
-  totalTokenDelta: number
-  totalForecastCost: number
-  totalActualCost: number
-  totalCostDelta: number
-  rows: TraceComparisonRow[]
-}
-
-export type TopologyDocument = {
-  version: string
-  exportedAt: string
-  topology: {
-    agents: Agent[]
-    edges: Edge[]
-  }
-  scenario: ScenarioState
-  pricing?: WorkspacePricing
-  quickEstimate?: QuickEstimateState
-}
+// --- Topology layout ---
 
 export type LayoutNode = {
   agent: Agent
@@ -155,17 +88,15 @@ export type LayoutNode = {
   depth: number
 }
 
-export type TokenSampleState = {
-  inputText: string
-  outputText: string
-}
+// --- Workspace document ---
 
-export type QuickEstimateState = {
-  monthlyVolume: number
-  averageInputTokens: number
-  averageOutputTokens: number
-  ragUsagePercent: number
-  modelMix: Record<string, number>
+export type TopologyDocument = {
+  version: string
+  exportedAt: string
+  topology: {
+    agents: Agent[]
+    edges: Edge[]
+  }
+  estimate: EstimateConfig
+  pricing: WorkspacePricing
 }
-
-export type PanelKey = 'agents' | 'flows'

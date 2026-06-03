@@ -18,7 +18,7 @@ console.log('=== FinOps Validation: Audience Orchestrator ===\n')
 console.log(`Users: ${config.users}`)
 console.log(`Conversations/user/month: ${config.conversationsPerUser}`)
 console.log(`Total conversations/month: ${config.conversationsPerMonth}`)
-console.log(`Model: gpt-5 (€${PRICING['gpt-5'].in}/1M in, €${PRICING['gpt-5'].out}/1M out)\n`)
+console.log(`Model: gpt-4.1 (€${PRICING['gpt-4.1'].in}/1M in, €${PRICING['gpt-4.1'].out}/1M out)\n`)
 
 // --- Manual calculation ---
 console.log('--- Manual Calculation ---\n')
@@ -51,8 +51,8 @@ console.log(`\nTraffic shares: ${sharesCorrect ? '✓ ALL CORRECT' : '✗ ERRORS
 // Manual cost for each agent
 console.log('--- Per-Agent Cost (Manual) ---\n')
 
-const gpt5In = PRICING['gpt-5'].in  // 10 EUR/1M
-const gpt5Out = PRICING['gpt-5'].out // 40 EUR/1M
+const gpt41In = PRICING['gpt-4.1'].in  // 2 EUR/1M
+const gpt41Out = PRICING['gpt-4.1'].out // 8 EUR/1M
 
 let totalManualCost = 0
 let totalManualTokens = 0
@@ -73,7 +73,7 @@ for (const agent of agents) {
   const outputTokens = calls * outputPerCall
 
   const totalTokens = inputTokens + outputTokens
-  const cost = (inputTokens / PRICING_TOKENS_PER_UNIT) * gpt5In + (outputTokens / PRICING_TOKENS_PER_UNIT) * gpt5Out
+  const cost = (inputTokens / PRICING_TOKENS_PER_UNIT) * gpt41In + (outputTokens / PRICING_TOKENS_PER_UNIT) * gpt41Out
 
   totalManualCost += cost
   totalManualTokens += totalTokens

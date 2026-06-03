@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Toki — AI Token Cost Calculator</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
+    :root {
+      --r-main-font: 'Manrope', 'Segoe UI', sans-serif;
+      --r-heading-font: 'Manrope', sans-serif;
+      --r-main-font-size: 20px;
+      --r-main-color: #1e293b;
+      --r-heading-color: #0f172a;
+      --r-link-color: #0f766e;
+    }
+    .reveal { font-family: var(--r-main-font); }
+    .reveal h1, .reveal h2, .reveal h3 { font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.3em; }
+    .reveal h1 { font-size: 2em; color: #0f766e; }
+    .reveal h2 { font-size: 1.4em; }
+    .reveal h3 { font-size: 0.95em; color: #0f766e; margin-bottom: 0.2em; }
+    .reveal p, .reveal li { font-size: 0.68em; line-height: 1.45; }
+    .reveal ul, .reveal ol { text-align: left; margin-left: 0.5em; }
+    .reveal li { margin-bottom: 0.25em; }
+    .reveal section { padding: 15px 35px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; text-align: left; }
+    .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.8em; text-align: left; }
+    .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.8em; }
+    .card h3 { margin-top: 0; }
+    .badge { display: inline-block; font-weight: 700; font-size: 0.55em; padding: 0.2em 0.6em; border-radius: 16px; margin: 0.1em; }
+    .badge-green { background: #ecfdf5; color: #065f46; }
+    .badge-amber { background: #fffbeb; color: #92400e; }
+    .badge-blue { background: #eff6ff; color: #1e40af; }
+    .badge-purple { background: #faf5ff; color: #6b21a8; }
+    .badge-red { background: #fef2f2; color: #991b1b; }
+    .stat-row { display: flex; justify-content: center; gap: 1.5em; margin: 0.6em 0; }
+    .stat-box { text-align: center; }
+    .stat-box .num { font-size: 1.6em; font-weight: 800; color: #0f766e; line-height: 1.1; }
+    .stat-box .label { font-size: 0.5em; color: #64748b; font-weight: 600; }
+    .flow-row { display: flex; align-items: center; justify-content: center; gap: 0.4em; margin: 0.8em 0; flex-wrap: wrap; }
+    .flow-step { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.4em 0.7em; font-size: 0.58em; font-weight: 600; text-align: center; min-width: 85px; }
+    .flow-arrow { font-size: 1em; color: #0f766e; }
+    .icon-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6em; margin-top: 0.6em; }
+    .icon-card { text-align: center; padding: 0.6em; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .icon-card .emoji { font-size: 1.3em; margin-bottom: 0.15em; }
+    .icon-card .txt { font-size: 0.55em; font-weight: 600; color: #334155; }
+    .reveal table { font-size: 0.55em; margin: 0.4em auto; border-collapse: collapse; }
+    .reveal table th { background: #f1f5f9; color: #0f172a; font-weight: 700; }
+    .reveal table td, .reveal table th { padding: 0.35em 0.6em; border: 1px solid #e2e8f0; }
+    .subtitle { color: #64748b; font-size: 0.65em; }
+    .footer-note { font-size: 0.45em; color: #94a3b8; margin-top: 0.8em; }
+    .audience-tag { display: inline-block; font-size: 0.5em; background: #eff6ff; color: #1e40af; font-weight: 700; padding: 0.2em 0.6em; border-radius: 12px; margin-bottom: 0.5em; }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- 1. Title -->
+      <section data-background-gradient="linear-gradient(135deg, #0b1523 0%, #143149 100%)">
+        <img src="/toki-logo.png" alt="Toki" style="height: 55px; margin-bottom: 0.2em; filter: brightness(10);" />
+        <h1 style="color: #5eead4;">Toki</h1>
+        <p style="color: #94a3b8; font-size: 0.75em;">Token Cost Calculator for Agentic AI Systems</p>
+        <div style="margin-top: 1.2em; display: flex; gap: 0.5em; justify-content: center; flex-wrap: wrap;">
+          <span class="badge badge-blue">For DevOps</span>
+          <span class="badge badge-purple">For AI Managers</span>
+          <span class="badge badge-green">For Architects</span>
+        </div>
+        <p style="margin-top: 1.5em; font-size: 0.45em; color: #64748b;">Created by Vincenzo MARAFIOTI</p>
+      </section>
+
+      <!-- 2. Why This Matters -->
+      <section>
+        <h2>Why This Matters to You</h2>
+        <div class="three-col">
+          <div class="card">
+            <span class="audience-tag">DevOps</span>
+            <h3>Capacity Planning</h3>
+            <ul>
+              <li>Predict API rate limits before launch</li>
+              <li>Size infrastructure for token throughput</li>
+              <li>Plan cost alerts and budgets</li>
+            </ul>
+          </div>
+          <div class="card">
+            <span class="audience-tag">AI Manager</span>
+            <h3>Budget Governance</h3>
+            <ul>
+              <li>Defensible cost estimates for steering committees</li>
+              <li>Compare build scenarios on cost</li>
+              <li>Track AI spend per product line</li>
+            </ul>
+          </div>
+          <div class="card">
+            <span class="audience-tag">Architect</span>
+            <h3>Design Decisions</h3>
+            <ul>
+              <li>Model cost of orchestrator patterns</li>
+              <li>Quantify MCP tool overhead</li>
+              <li>Evaluate model selection trade-offs</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. The Problem -->
+      <section>
+        <h2>😰 The Problem</h2>
+        <div class="stat-row">
+          <div class="stat-box"><div class="num">70%</div><div class="label">AI projects exceed<br/>initial budget</div></div>
+          <div class="stat-box"><div class="num">0</div><div class="label">standard tools for<br/>agentic cost estimation</div></div>
+          <div class="stat-box"><div class="num">3–10×</div><div class="label">token cost surprise<br/>at production scale</div></div>
+        </div>
+        <div class="two-col" style="margin-top: 0.8em;">
+          <div class="card">
+            <h3>🚫 Current State</h3>
+            <ul>
+              <li>Costs discovered <strong>after</strong> production deployment</li>
+              <li>Multi-agent token flows are invisible</li>
+              <li>No way to model MCP tool overhead upfront</li>
+              <li>Spreadsheets break when architectures change</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>💥 Business Impact</h3>
+            <ul>
+              <li>Budget overruns on AI initiatives</li>
+              <li>Blocked projects due to unclear cost</li>
+              <li>Architecture decisions without cost data</li>
+              <li>No FinOps governance possible</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. The Solution -->
+      <section>
+        <h2>💡 Toki: The Solution</h2>
+        <p style="font-size: 0.75em; max-width: 650px; margin: 0 auto 0.6em;">A <span style="color: #0f766e; font-weight: 700;">real-time cost calculator</span> that models your entire multi-agent architecture and gives you monthly cost, token volumes, and confidence levels <strong>before you write code</strong>.</p>
+        <div class="flow-row">
+          <div class="flow-step">👥 Traffic<br/>Volume</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">🤖 Agent<br/>Topology</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">🔧 MCP +<br/>RAG Config</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="background: #ecfdf5; border-color: #059669;">💰 Cost &<br/>Tokens</div>
+        </div>
+        <div style="display: flex; gap: 0.4em; justify-content: center; flex-wrap: wrap; margin-top: 0.8em;">
+          <span class="badge badge-green">Live updates</span>
+          <span class="badge badge-green">Traffic routing</span>
+          <span class="badge badge-amber">MCP tool costing</span>
+          <span class="badge badge-green">RAG overhead</span>
+          <span class="badge badge-blue">Prompt caching</span>
+          <span class="badge badge-purple">Best/worst case</span>
+          <span class="badge badge-blue">Confidence scoring</span>
+        </div>
+      </section>
+
+      <!-- 5. For Architects: Agent Topology -->
+      <section>
+        <span class="audience-tag">Architect Focus</span>
+        <h2>🗺️ Agent Topology Modeling</h2>
+        <div class="two-col">
+          <div>
+            <ul>
+              <li><strong>Visual graph</strong> of orchestrators and specialists</li>
+              <li><strong>Traffic %</strong> on each connection (absolute probability)</li>
+              <li><strong>MCP/RAG badges</strong> on nodes</li>
+              <li><strong>Click-to-edit</strong> any agent from the graph</li>
+              <li><strong>Routing modes:</strong> weighted, fan-out, round-robin</li>
+            </ul>
+            <p class="footer-note">Edge weight = probability a conversation triggers that agent.<br/>Values don't need to sum to 100%.</p>
+          </div>
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 0.8em;">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 0.4em;">
+              <div style="background: #ecfdf5; border: 2px solid #059669; border-radius: 8px; padding: 0.4em 0.8em; font-size: 0.55em; font-weight: 700;">🟢 Orchestrator (100%)</div>
+              <div style="display: flex; gap: 1em; font-size: 0.5em;">
+                <span>↙ 50%</span><span>↓ 100%</span><span>↘ 80%</span>
+              </div>
+              <div style="display: flex; gap: 0.5em;">
+                <div style="background: #fffbeb; border: 1.5px solid #d97706; border-radius: 8px; padding: 0.3em 0.5em; font-size: 0.5em; font-weight: 600;">🔧 MCP ×3</div>
+                <div style="background: #f0fdf4; border: 1.5px solid #16a34a; border-radius: 8px; padding: 0.3em 0.5em; font-size: 0.5em; font-weight: 600;">📚 RAG</div>
+                <div style="background: #fffbeb; border: 1.5px solid #d97706; border-radius: 8px; padding: 0.3em 0.5em; font-size: 0.5em; font-weight: 600;">🔧 MCP ×2</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. For DevOps: Cost Engine -->
+      <section>
+        <span class="audience-tag">DevOps Focus</span>
+        <h2>⚙️ What Gets Calculated</h2>
+        <table>
+          <tr><th>Factor</th><th>How it's modeled</th><th>Impact</th></tr>
+          <tr><td>Base LLM tokens</td><td>Input + Output per call × calls/conv</td><td>Primary cost driver</td></tr>
+          <tr><td>MCP tool calls</td><td>Input overhead (result fed back) + Output overhead</td><td>Often 30-60% extra</td></tr>
+          <tr><td>RAG retrieval</td><td>Chunks × tokens/chunk added to input</td><td>Input inflation</td></tr>
+          <tr><td>History growth</td><td>Geometric series across multi-turn calls</td><td>2-4× for chatbots</td></tr>
+          <tr><td>Prompt caching</td><td>% of input served from cache (90% discount)</td><td>Up to 50% savings</td></tr>
+          <tr><td>Traffic routing</td><td>Edge weights propagated via BFS</td><td>Right-sizes each agent</td></tr>
+        </table>
+        <p class="footer-note">Formula: effective_conversations × calls × (input + RAG + MCP_in) × price_in + output × price_out</p>
+      </section>
+
+      <!-- 7. For Managers: Output & Confidence -->
+      <section>
+        <span class="audience-tag">AI Manager Focus</span>
+        <h2>📊 What You Get</h2>
+        <div class="two-col">
+          <div class="card">
+            <h3>💰 Cost Summary</h3>
+            <ul>
+              <li>Monthly cost in EUR</li>
+              <li>Cost per conversation</li>
+              <li>Best case / worst case range</li>
+              <li>Cost breakdown per agent</li>
+              <li>Token breakdown (input/output/embed)</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>🎯 Confidence Rating</h3>
+            <ul>
+              <li><span class="badge badge-green">High</span> All parameters measured</li>
+              <li><span class="badge badge-amber">Medium</span> Some defaults used</li>
+              <li><span class="badge badge-red">Low</span> Key data missing</li>
+              <li>Explains exactly what's missing</li>
+              <li>Guides to higher accuracy</li>
+            </ul>
+          </div>
+        </div>
+        <div style="margin-top: 0.8em; display: flex; gap: 0.5em; justify-content: center; flex-wrap: wrap;">
+          <span class="badge badge-blue">Export CSV</span>
+          <span class="badge badge-blue">Export Excel (.xlsx with formulas)</span>
+          <span class="badge badge-blue">Share via URL</span>
+          <span class="badge badge-blue">Copy to clipboard</span>
+        </div>
+      </section>
+
+      <!-- 8. Accuracy -->
+      <section>
+        <h2>🎯 Validated Accuracy</h2>
+        <table>
+          <tr><th>Scenario</th><th>Confidence</th><th>Accuracy vs. actual</th></tr>
+          <tr><td>Single agent, measured token values</td><td><span class="badge badge-green">High</span></td><td>±5–10%</td></tr>
+          <tr><td>Multi-agent with MCP tools</td><td><span class="badge badge-green">High</span></td><td>±10–15%</td></tr>
+          <tr><td>Multi-agent + history growth configured</td><td><span class="badge badge-green">High</span></td><td>±15–20%</td></tr>
+          <tr><td>Default values (not measured from real prompts)</td><td><span class="badge badge-amber">Medium</span></td><td>±30–40%</td></tr>
+        </table>
+        <p class="footer-note">Core math validated to <strong>zero delta</strong> with manual calculation (automated validation script included in repo).</p>
+      </section>
+
+      <!-- 9. Supported Models -->
+      <section>
+        <h2>🏷️ Pricing Catalog (June 2026)</h2>
+        <div class="two-col">
+          <div>
+            <table>
+              <tr><th>OpenAI</th><th>In (€/1M)</th><th>Out (€/1M)</th></tr>
+              <tr><td>GPT-4.1</td><td>€2.00</td><td>€8.00</td></tr>
+              <tr><td>GPT-4.1 Mini</td><td>€0.40</td><td>€1.60</td></tr>
+              <tr><td>GPT-4.1 Nano</td><td>€0.10</td><td>€0.40</td></tr>
+              <tr><td>GPT-4o</td><td>€2.50</td><td>€10.00</td></tr>
+              <tr><td>o3 / o4-mini</td><td>€2 / €1.1</td><td>€8 / €4.4</td></tr>
+            </table>
+          </div>
+          <div>
+            <table>
+              <tr><th>Anthropic</th><th>In (€/1M)</th><th>Out (€/1M)</th></tr>
+              <tr><td>Claude Sonnet 4</td><td>€3.00</td><td>€15.00</td></tr>
+              <tr><td>Claude Haiku 4</td><td>€1.00</td><td>€5.00</td></tr>
+              <tr><td>Claude Opus 4</td><td>€15.00</td><td>€75.00</td></tr>
+            </table>
+            <p class="footer-note" style="margin-top: 0.6em;">Custom models can be added<br/>with user-defined rates</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 10. Real-world Example -->
+      <section>
+        <h2>📋 Example: Audience Orchestrator</h2>
+        <table>
+          <tr><th>Agent</th><th>Model</th><th>Traffic</th><th>MCP</th><th>Tokens/mo</th></tr>
+          <tr><td>Orchestrator</td><td>GPT-4.1</td><td>100%</td><td>—</td><td>42M</td></tr>
+          <tr><td>Definition Creator</td><td>GPT-4.1</td><td>10%</td><td>×2</td><td>3.2M</td></tr>
+          <tr><td>Inspector</td><td>GPT-4.1</td><td>50%</td><td>×1</td><td>23.6M</td></tr>
+          <tr><td>Snapshot</td><td>GPT-4.1</td><td>100%</td><td>×1</td><td>47.3M</td></tr>
+          <tr><td>Recommendation</td><td>GPT-4.1</td><td>80%</td><td>×2</td><td>44.8M</td></tr>
+          <tr><td>General</td><td>GPT-4.1</td><td>50%</td><td>×4</td><td>36.8M</td></tr>
+        </table>
+        <div class="stat-row" style="margin-top: 0.8em;">
+          <div class="stat-box"><div class="num">35k</div><div class="label">conversations/month</div></div>
+          <div class="stat-box"><div class="num">197M</div><div class="label">tokens/month</div></div>
+          <div class="stat-box"><div class="num">€1,364</div><div class="label">EUR/month</div></div>
+        </div>
+      </section>
+
+      <!-- 11. Deployment & Operations -->
+      <section>
+        <span class="audience-tag">DevOps Focus</span>
+        <h2>🚀 Deployment</h2>
+        <div class="two-col">
+          <div class="card">
+            <h3>Forge (Internal)</h3>
+            <ul>
+              <li>Multi-stage Docker (Node build → nginx)</li>
+              <li>Port 8080, non-root (UID 1000)</li>
+              <li>OpenShift SCC compliant</li>
+              <li>/health endpoint for probes</li>
+              <li>50m CPU / 64Mi RAM</li>
+              <li><strong>No backend, no database</strong></li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Architecture</h3>
+            <ul>
+              <li>100% client-side computation</li>
+              <li>localStorage persistence</li>
+              <li>Zero external API calls</li>
+              <li>Zero PII handling</li>
+              <li>Static file serving only</li>
+              <li>Rollback = redeploy prev tag</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 12. Known Limitations -->
+      <section>
+        <h2>⚠️ Scope & Limitations</h2>
+        <div class="three-col">
+          <div class="card" style="font-size: 0.6em;">
+            <strong>✅ What it does</strong><br/>
+            Planning-stage cost estimation for multi-agent LLM systems
+          </div>
+          <div class="card" style="font-size: 0.6em;">
+            <strong>❌ What it doesn't do</strong><br/>
+            Production billing reconciliation or real-time spend monitoring
+          </div>
+          <div class="card" style="font-size: 0.6em;">
+            <strong>📈 Roadmap</strong><br/>
+            Usage log calibration, what-if comparisons, team workspaces
+          </div>
+        </div>
+        <div class="three-col" style="margin-top: 0.6em;">
+          <div class="card" style="font-size: 0.55em;"><strong>No variance modeling</strong> — all calls identical size</div>
+          <div class="card" style="font-size: 0.55em;"><strong>Cache = 90% fixed</strong> — OpenAI gives 50%</div>
+          <div class="card" style="font-size: 0.55em;"><strong>No rate limit cost</strong> — throttling not modeled</div>
+          <div class="card" style="font-size: 0.55em;"><strong>Static pricing</strong> — no batch/real-time tiers</div>
+          <div class="card" style="font-size: 0.55em;"><strong>No fine-tuning</strong> — training cost excluded</div>
+          <div class="card" style="font-size: 0.55em;"><strong>Global embedding</strong> — same rate all agents</div>
+        </div>
+      </section>
+
+      <!-- 13. Getting Started -->
+      <section>
+        <h2>🏁 Getting Started</h2>
+        <div class="flow-row">
+          <div class="flow-step">1️⃣ Load a<br/>sample</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">2️⃣ Set users &<br/>conversations</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">3️⃣ Customize<br/>agents</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">4️⃣ Check<br/>topology</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="background: #ecfdf5; border-color: #059669;">5️⃣ Export &<br/>share</div>
+        </div>
+        <div class="two-col" style="margin-top: 1em;">
+          <div class="card">
+            <h3>Quick start (2 min)</h3>
+            <ol>
+              <li>Click <strong>Samples → Audience Orchestrator</strong></li>
+              <li>Adjust the traffic volume</li>
+              <li>Read cost in the right panel</li>
+              <li>Export Excel for your stakeholders</li>
+            </ol>
+          </div>
+          <div class="card">
+            <h3>Deep modeling (10 min)</h3>
+            <ol>
+              <li>Add your own agents with real token counts</li>
+              <li>Use the Token Tool to measure prompts</li>
+              <li>Set MCP calls and RAG parameters</li>
+              <li>Connect agents with traffic %</li>
+            </ol>
+          </div>
+        </div>
+        <div style="margin-top: 1em;">
+          <a href="/" style="display: inline-block; background: #0f766e; color: #fff; font-weight: 700; padding: 0.5em 1.2em; border-radius: 8px; text-decoration: none; font-size: 0.65em;">← Open Toki Calculator</a>
+        </div>
+      </section>
+
+      <!-- 14. Thank You -->
+      <section data-background-gradient="linear-gradient(135deg, #0b1523 0%, #143149 100%)">
+        <h2 style="color: #5eead4;">Thank you</h2>
+        <div style="margin: 0.8em auto; max-width: 380px; text-align: left; color: #cbd5e1; font-size: 0.65em;">
+          <p><strong style="color: #f8fafc;">Creator:</strong> Vincenzo MARAFIOTI</p>
+          <p><strong style="color: #f8fafc;">Tool:</strong> toki.forge.amadeus.net</p>
+          <p><strong style="color: #f8fafc;">Source:</strong> Corporate Git repository</p>
+          <p><strong style="color: #f8fafc;">Hosting:</strong> Forge (Amadeus)</p>
+        </div>
+        <div style="margin-top: 1em; display: flex; gap: 0.5em; justify-content: center; flex-wrap: wrap;">
+          <span class="badge badge-blue">DevOps ready</span>
+          <span class="badge badge-purple">Manager friendly</span>
+          <span class="badge badge-green">Architect proven</span>
+        </div>
+        <p style="margin-top: 1.5em; font-size: 0.45em; color: #64748b;">Arrow keys or swipe to navigate · Press F for fullscreen · Esc to exit</p>
+      </section>
+
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+  <script>
+    Reveal.initialize({
+      hash: true,
+      slideNumber: 'c/t',
+      transition: 'slide',
+      backgroundTransition: 'fade',
+      controls: true,
+      progress: true,
+      center: true,
+      width: 960,
+      height: 600,
+      margin: 0.04,
+    });
+  </script>
+  <a href="/" style="position: fixed; top: 10px; left: 10px; z-index: 9999; background: rgba(15,23,42,0.85); color: #fff; font-family: Manrope, sans-serif; font-size: 11px; font-weight: 700; padding: 5px 12px; border-radius: 6px; text-decoration: none; backdrop-filter: blur(8px);">← Back to Toki</a>
+</body>
+</html>

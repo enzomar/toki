@@ -1,136 +1,217 @@
 # Toki
 
-Toki is a Vite + React app for estimating token usage and cost for agentic systems.
+**Token Cost Calculator for Agentic AI Systems**
 
-It supports two alternative estimation modes:
+Toki estimates the monthly token consumption and cost of multi-agent LLM architectures before you build them. It models agents, MCP tool calls, RAG retrieval, traffic routing, and prompt caching to produce a defensible budget estimate.
 
-- Quick estimate mode: a top-down business estimate from conversation volume, average token sizes, and model split.
-- Detailed forecast mode: a bottom-up estimate from agents, handoffs, routing, and traffic assumptions.
+Created by **Vincenzo MARAFIOTI**
 
-## What the app includes
+---
 
-- Quick estimate mode for rough cost sizing.
-- Detailed forecast mode for architecture-level modeling.
-- A topology modal to visualize agents and handoffs.
-- A pricing and model catalog with USD/EUR display support.
-- Static Vercel deployment output via Vite.
+## Features
+
+| Category | Capabilities |
+|----------|-------------|
+| **Cost engine** | Real-time EUR cost calculation, cost per conversation, best/worst case range |
+| **Agent modeling** | Input/output tokens per call, calls per conversation, history growth factor |
+| **MCP tools** | Tool calls per conversation, input overhead (result fed back), output overhead |
+| **RAG retrieval** | Chunks × tokens per chunk, embedding token cost |
+| **Prompt caching** | Configurable cache hit rate (90% discount on cached input portion) |
+| **Traffic routing** | Edge weights as absolute traffic probabilities, multi-agent topology propagation |
+| **Confidence** | Auto-scored High/Medium/Low with explanations of what's missing |
+| **Topology** | Interactive SVG graph with bezier edges, traffic %, MCP/RAG badges, node inspector |
+| **Token tool** | Text/JSON → token count converter, inline from agent fields or dedicated tab |
+| **Export** | JSON workspace (re-importable), CSV, Excel (multi-sheet) |
+| **Share** | One-click URL sharing (workspace encoded as base64 in query string) |
+| **Help** | Embedded reveal.js presentation (13 slides) for pitching and onboarding |
+
+---
+
+## Supported Models
+
+| Provider | Model | Input (€/1M) | Output (€/1M) |
+|----------|-------|-------------|--------------|
+| OpenAI | GPT-4.1 | €2.00 | €8.00 |
+| OpenAI | GPT-4.1 Mini | €0.40 | €1.60 |
+| OpenAI | GPT-4.1 Nano | €0.10 | €0.40 |
+| OpenAI | GPT-4o | €2.50 | €10.00 |
+| OpenAI | GPT-4o Mini | €0.15 | €0.60 |
+| OpenAI | o3 (reasoning) | €2.00 | €8.00 |
+| OpenAI | o4-mini (reasoning) | €1.10 | €4.40 |
+| Anthropic | Claude Sonnet 4 | €3.00 | €15.00 |
+| Anthropic | Claude Haiku 4 | €1.00 | €5.00 |
+| Anthropic | Claude Opus 4 | €15.00 | €75.00 |
+
+Custom models can be added from the Pricing tab with user-defined rates.
+
+---
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 20+
 - npm 9+
 
-## Local development
+---
 
-Install dependencies:
+## Local Development
 
 ```bash
+# Install dependencies
 npm install
-```
 
-Start the app locally in dev mode:
-
-```bash
+# Start dev server (http://localhost:5173)
 make dev
-```
 
-By default this runs Vite on `0.0.0.0:5173`.
-
-Build the app:
-
-```bash
+# Production build
 make build
-```
 
-Preview the production build locally:
+# Run tests
+npm test
 
-```bash
+# Preview production build
 make preview
 ```
 
-## Optional header links
+---
 
-The header supports two small external actions:
+## Deployment
 
-- `VITE_PAYPAL_DONATE_URL`: opened by the heart icon for PayPal donations.
-- The mail icon opens an in-app contact dialog that posts to the hardcoded Formspree form `xzdwwwzv`.
-
-Create a local env file if you want to enable them during development:
-
-```bash
-cp .env.example .env.local
-```
-
-Then set the values you want:
-
-```bash
-VITE_PAYPAL_DONATE_URL=https://www.paypal./?hosted_button_id=YOUR_BUTTON_ID
-```
-
-If the PayPal value is missing, the heart icon stays visible and the app shows a setup toast instead of opening a blank link.
-
-## Makefile targets
-
-- `make install`: install dependencies.
-- `make dev`: start Vite in local dev mode.
-- `make build`: run the production build.
-- `make preview`: serve the production build locally.
-- `make vercel-login`: authenticate the Vercel CLI.
-- `make vercel-link`: link this folder to an existing or new Vercel project.
-- `make deploy-preview`: create a preview deployment on Vercel.
-- `make deploy-prod`: build locally, then create a production deployment on Vercel.
-- `make push MESSAGE="..."`: add, commit, and push the current branch to `origin`.
-- `make push-auto MESSAGE="..."`: alias for `make push`, using the same auto-commit flow.
-
-`make push` and `make push-auto` are intentionally guarded: they stop if this folder is not a git repository or if the `origin` remote is missing.
-
-## Deploying to Vercel
-
-This repository includes [vercel.json](vercel.json), which tells Vercel to:
-
-- use the Vite framework preset
-- build with `npm run build`
-- publish the `dist/` folder
-
-### Option 1: Deploy from a Git repository
-
-Recommended when you want Vercel to redeploy automatically after each push.
-
-1. Initialize git if needed.
-2. Add a remote repository.
-3. Push the code:
-
-```bash
-make push MESSAGE="chore: initial deploy setup"
-```
-
-4. Import the repository in Vercel.
-
-### Option 2: Deploy with the Vercel CLI
+### Option 1: Vercel (external / public)
 
 ```bash
 make vercel-login
 make vercel-link
-make deploy-preview
 make deploy-prod
 ```
 
-## Pricing note
+Vercel configuration is in `vercel.json`. Builds with `npm run build`, publishes `dist/`.
 
-- Model input, output, and embedding prices are stored per 1M tokens.
-- The USD/EUR selector changes labels and formatted output only.
-- Switching currency does not auto-convert existing numeric price values.
+### Option 2: Forge (Amadeus internal)
 
-## Repo hygiene
+Toki ships with a multi-stage Dockerfile optimized for Forge/OpenShift deployment.
 
-The repository includes [.gitignore](.gitignore) entries for:
+```bash
+# Build Docker image (tagged with package.json version)
+make docker-build
 
-- `node_modules/`
-- `dist/`
-- `.vercel/`
-- TypeScript build info files
+# Test locally (http://localhost:8080)
+make docker-run
 
-## Maintenance guidance
+# Push to Forge Artifactory registry
+make docker-push
+```
 
-See [agent.md](agent.md) for repository-specific instructions that future coding agents should follow when they modify deployment files, docs, pricing behavior, or developer tooling.
-com/donate
+#### Forge Docker details
+
+| Aspect | Implementation |
+|--------|---------------|
+| Base image | Amadeus RHEL (`docker-release.nce.dockerhub.rnd.amadeus.net/acs/rhel-init`) |
+| Web server | nginx on port 8080 |
+| User | Non-root (UID 1000), OpenShift SCC compliant |
+| Health check | `GET /health` returns `{"status":"ok"}` |
+| Static assets | Gzip compressed, 1-year cache on `/assets/` |
+| SPA routing | All paths fall back to `index.html` |
+
+#### Forge onboarding checklist
+
+| Step | Status |
+|------|--------|
+| Git repository (corporate) | ✅ Done |
+| Dockerfile (multi-stage, non-root, port 8080) | ✅ Done |
+| OpenShift SCC compliant (random UID, no root) | ✅ Done |
+| Health check endpoint (`/health`) | ✅ Done |
+| nginx security headers (X-Frame, XSS, nosniff) | ✅ Done |
+| `.dockerignore` | ✅ Done |
+| Register in SIAM | ⬜ Pending |
+| Security assessment | ⬜ Pending |
+| Request onboarding (DG-NCE-Forge-Support) | ⬜ Pending |
+
+#### Forge configuration values
+
+| Field | Value |
+|-------|-------|
+| Tool name | `toki` |
+| Domain | `toki.forge.amadeus.net` |
+| Description | Token Cost Calculator for Agentic AI Systems |
+| Container listening port | `8080` |
+| Type | `office` |
+| Personal data | None |
+| Main technologies | TypeScript, React, Vite, nginx |
+
+---
+
+## Makefile Targets
+
+| Target | Description |
+|--------|-------------|
+| `make dev` | Start Vite dev server on 0.0.0.0:5173 |
+| `make build` | Production build (TypeScript check + Vite) |
+| `make preview` | Serve production build locally on :4173 |
+| `make push MESSAGE="..."` | Bump patch version, commit, push to origin |
+| `make docker-build` | Build Forge-ready Docker image |
+| `make docker-run` | Run container locally on :8080 |
+| `make docker-push` | Push image to Forge Artifactory registry |
+| `make deploy-preview` | Vercel preview deployment |
+| `make deploy-prod` | Vercel production deployment |
+
+---
+
+## Project Structure
+
+```
+src/
+├── App.tsx                      # Main app (calculator, topology, pricing, token tool, help)
+├── main.tsx                     # Entry point (MUI theme, error boundary)
+├── components/
+│   ├── ErrorBoundary.tsx        # Crash recovery UI
+│   ├── TokenTool.tsx            # Token converter dialog + inline button
+│   ├── atoms/TokiLogo.tsx       # Logo component
+│   └── organisms/TopologyCanvas.tsx  # Interactive SVG topology graph
+├── features/topology/
+│   ├── types.ts                 # Domain types (Agent, Edge, EstimateConfig, etc.)
+│   ├── config.ts                # Model options, pricing, samples
+│   └── utils.ts                 # Cost calculation, traffic shares, import/export
+├── hooks/
+│   └── useLocalStorage.ts       # Persistent state with localStorage
+├── test/
+│   ├── setup.ts                 # Vitest + testing-library setup
+│   └── App.test.tsx             # UI integration tests
+public/
+├── help.html                    # reveal.js presentation (13 slides)
+├── toki-logo.png                # Logo asset
+└── favicon.png                  # Browser favicon
+```
+
+---
+
+## Accuracy & Confidence
+
+| Scenario | Confidence | Expected accuracy |
+|----------|-----------|-------------------|
+| Single agent, measured token values | High | ±5–10% |
+| Multi-agent with MCP tools | High | ±10–15% |
+| Multi-agent with history growth | High | ±15–20% |
+| Default values (not measured) | Medium | ±30–40% |
+
+The cost engine is validated against manual calculation with zero delta (see `scripts/validate-accuracy.ts`).
+
+### Known limitations
+
+- No per-call variance modeling (all calls identical)
+- Cache discount hardcoded at 90% (OpenAI gives 50%, Anthropic 90%)
+- No rate limiting / retry cost beyond worst-case multiplier
+- Global embedding price (same for all RAG agents)
+- No fine-tuned model training cost
+- No batch vs real-time pricing tiers
+
+---
+
+## Version Management
+
+Each `make push` automatically bumps the patch version in `package.json` (e.g. 2.0.0 → 2.0.1). The version is injected at build time and displayed in the app footer.
+
+---
+
+## License
+
+Internal tool — Amadeus proprietary.

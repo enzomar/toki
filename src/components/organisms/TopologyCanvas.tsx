@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
-import { AddRounded, RemoveRounded, RestartAltRounded } from '@mui/icons-material'
+import { AddRounded, RemoveRounded, CenterFocusStrongRounded } from '@mui/icons-material'
 import { Box, IconButton, Paper, Stack, Typography } from '@mui/material'
 import { alpha } from '@mui/material/styles'
 import type { Agent, Edge, LayoutNode, WorkspacePricing } from '../../features/topology/types'
 import {
   buildTopologyLayout,
+  computeTrafficShares,
   getAgentConnections,
   getModelLabel,
 } from '../../features/topology/utils'
@@ -22,151 +23,304 @@ type TopologyCanvasProps = {
 
 type CanvasPoint = { x: number; y: number }
 
-const DEFAULT_ZOOM = 1
-const MIN_ZOOM = 0.65
-const MAX_ZOOM = 2.4
-const ZOOM_FACTOR = 1.14
+const MIN_ZOOM = 0.4
+const MAX_ZOOM = 3.0
+const ZOOM_FACTOR = 1.12
+const NODE_W = 220
+const NODE_H = 110
 
-function getResetViewState(layout: LayoutNode[], width: number, height: number, nodeWidth: number, nodeHeight: number) {
-  if (layout.length === 0) return { zoom: DEFAULT_ZOOM, pan: { x: 0, y: 0 } }
-  const paddingX = 72, paddingY = 64
-  const minX = Math.min(...layout.map((n) => n.x - nodeWidth / 2))
-  const maxX = Math.max(...layout.map((n) => n.x + nodeWidth / 2))
-  const minY = Math.min(...layout.map((n) => n.y - nodeHeight / 2))
-  const maxY = Math.max(...layout.map((n) => n.y + nodeHeight / 2))
-  const fitZoom = Math.min(DEFAULT_ZOOM, (width - paddingX * 2) / Math.max(1, maxX - minX), (height - paddingY * 2) / Math.max(1, maxY - minY))
-  const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, fitZoom))
-  return { zoom, pan: { x: width / 2 - ((minX + maxX) / 2) * zoom, y: height / 2 - ((minY + maxY) / 2) * zoom } }
+// --- Color system ---
+const COLORS = {
+  entry: { bg: '#ecfdf5', border: '#059669', text: '#065f46' },
+  rag: { bg: '#f0fdf4', border: '#16a34a', badge: '#15803d' },
+  mcp: { bg: '#fffbeb', border: '#d97706', badge: '#92400e' },
+  default: { bg: '#ffffff', border: '#64748b', text: '#1e293b' },
+  selected: { border: '#0f172a', shadow: 'rgba(15, 23, 42, 0.25)' },
+  edge: { normal: '#94a3b8', active: '#0f766e', label: '#475569' },
+}
+
+function getNodeColors(agent: Agent, isEntry: boolean) {
+  if (isEntry) return COLORS.entry
+  if (agent.ragEnabled) return COLORS.rag
+  if (agent.mcpCalls > 0) return COLORS.mcp
+  return COLORS.default
+}
+
+// --- Bezier curve for edges ---
+function computeBezierPath(src: CanvasPoint, tgt: CanvasPoint): string {
+  const dx = tgt.x - src.x
+  const dy = tgt.y - src.y
+  const dist = Math.sqrt(dx * dx + dy * dy)
+  const curvature = Math.min(dist * 0.3, 80)
+
+  // Horizontal bias for left-to-right flow
+  const cx1 = src.x + curvature
+  const cy1 = src.y
+  const cx2 = tgt.x - curvature
+  const cy2 = tgt.y
+
+  return `M ${src.x} ${src.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${tgt.x} ${tgt.y}`
+}
+
+function getResetView(layout: LayoutNode[], width: number, height: number) {
+  if (layout.length === 0) return { zoom: 1, pan: { x: 0, y: 0 } }
+  const pad = 80
+  const minX = Math.min(...layout.map((n) => n.x - NODE_W / 2)) - pad
+  const maxX = Math.max(...layout.map((n) => n.x + NODE_W / 2)) + pad
+  const minY = Math.min(...layout.map((n) => n.y - NODE_H / 2)) - pad
+  const maxY = Math.max(...layout.map((n) => n.y + NODE_H / 2)) + pad
+  const bw = maxX - minX, bh = maxY - minY
+  const zoom = Math.max(MIN_ZOOM, Math.min(1.2, Math.min(width / bw, height / bh)))
+  return {
+    zoom,
+    pan: { x: (width - bw * zoom) / 2 - minX * zoom, y: (height - bh * zoom) / 2 - minY * zoom },
+  }
 }
 
 export function TopologyCanvas(props: TopologyCanvasProps) {
-  const width = 1120
-  const height = Math.min(720, Math.max(420, props.agents.length * 120))
-  const layout = buildTopologyLayout(props.agents, props.edges, width, height)
-  const nodeMap = new Map(layout.map((n) => [n.agent.id, n]))
-  const nodeWidth = 200, nodeHeight = 100
-  const resetViewState = getResetViewState(layout, width, height, nodeWidth, nodeHeight)
+  const width = 1200
+  const height = Math.min(800, Math.max(450, props.agents.length * 130))
+  const layout = useMemo(() => buildTopologyLayout(props.agents, props.edges, width, height), [props.agents, props.edges, width, height])
+  const nodeMap = useMemo(() => new Map(layout.map((n) => [n.agent.id, n])), [layout])
+  const trafficShares = useMemo(() => computeTrafficShares(props.agents, props.edges), [props.agents, props.edges])
+  const resetViewState = useMemo(() => getResetView(layout, width, height), [layout, width, height])
+
   const svgRef = useRef<SVGSVGElement | null>(null)
-  const dragStateRef = useRef<{ pointerId: number; clientX: number; clientY: number; panX: number; panY: number } | null>(null)
+  const dragRef = useRef<{ pointerId: number; cx: number; cy: number; px: number; py: number } | null>(null)
   const draggedRef = useRef(false)
   const [zoom, setZoom] = useState(resetViewState.zoom)
   const [pan, setPan] = useState<CanvasPoint>(resetViewState.pan)
   const [isPanning, setIsPanning] = useState(false)
 
-  const clampZoom = (v: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v))
-  const getSvgPoint = (cx: number, cy: number): CanvasPoint | null => {
-    const rect = svgRef.current?.getBoundingClientRect()
-    if (!rect || rect.width === 0) return null
-    return { x: ((cx - rect.left) / rect.width) * width, y: ((cy - rect.top) / rect.height) * height }
-  }
-  const applyZoom = (requested: number, anchor = { x: width / 2, y: height / 2 }) => {
-    const next = clampZoom(requested)
-    if (Math.abs(next - zoom) < 0.001) return
+  const clamp = (v: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v))
+
+  const applyZoom = (next: number, anchor = { x: width / 2, y: height / 2 }) => {
+    const z = clamp(next)
+    if (Math.abs(z - zoom) < 0.001) return
     const gx = (anchor.x - pan.x) / zoom, gy = (anchor.y - pan.y) / zoom
-    setPan({ x: anchor.x - gx * next, y: anchor.y - gy * next })
-    setZoom(next)
+    setPan({ x: anchor.x - gx * z, y: anchor.y - gy * z })
+    setZoom(z)
   }
+
   const resetView = () => { setPan(resetViewState.pan); setZoom(resetViewState.zoom) }
 
-  const handlePointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
+  const getSvgPt = (cx: number, cy: number): CanvasPoint | null => {
+    const r = svgRef.current?.getBoundingClientRect()
+    if (!r || r.width === 0) return null
+    return { x: ((cx - r.left) / r.width) * width, y: ((cy - r.top) / r.height) * height }
+  }
+
+  const onDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (e.button !== 0 && e.pointerType !== 'touch') return
     draggedRef.current = false
-    dragStateRef.current = { pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY, panX: pan.x, panY: pan.y }
+    dragRef.current = { pointerId: e.pointerId, cx: e.clientX, cy: e.clientY, px: pan.x, py: pan.y }
     setIsPanning(true)
     e.currentTarget.setPointerCapture(e.pointerId)
   }
-  const handlePointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
-    const ds = dragStateRef.current
-    if (!ds || ds.pointerId !== e.pointerId) return
-    const rect = svgRef.current?.getBoundingClientRect()
-    if (!rect || rect.width === 0) return
-    const dx = ((e.clientX - ds.clientX) / rect.width) * width
-    const dy = ((e.clientY - ds.clientY) / rect.height) * height
-    if (Math.abs(dx) + Math.abs(dy) > 2) draggedRef.current = true
-    setPan({ x: ds.panX + dx, y: ds.panY + dy })
+  const onMove = (e: ReactPointerEvent<SVGSVGElement>) => {
+    const d = dragRef.current
+    if (!d || d.pointerId !== e.pointerId) return
+    const r = svgRef.current?.getBoundingClientRect()
+    if (!r || r.width === 0) return
+    const dx = ((e.clientX - d.cx) / r.width) * width
+    const dy = ((e.clientY - d.cy) / r.height) * height
+    if (Math.abs(dx) + Math.abs(dy) > 3) draggedRef.current = true
+    setPan({ x: d.px + dx, y: d.py + dy })
   }
-  const finishPointer = (e: ReactPointerEvent<SVGSVGElement>) => {
-    if (dragStateRef.current?.pointerId !== e.pointerId) return
-    dragStateRef.current = null
+  const onUp = (e: ReactPointerEvent<SVGSVGElement>) => {
+    if (dragRef.current?.pointerId !== e.pointerId) return
+    dragRef.current = null
     setIsPanning(false)
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId)
   }
-  const handleWheel = (e: ReactWheelEvent<SVGSVGElement>) => {
+  const onWheel = (e: ReactWheelEvent<SVGSVGElement>) => {
     e.preventDefault()
-    const anchor = getSvgPoint(e.clientX, e.clientY) ?? { x: width / 2, y: height / 2 }
+    const anchor = getSvgPt(e.clientX, e.clientY) ?? { x: width / 2, y: height / 2 }
     applyZoom(e.deltaY < 0 ? zoom * ZOOM_FACTOR : zoom / ZOOM_FACTOR, anchor)
   }
-  const handleNodeClick = (id: string) => { if (!draggedRef.current) props.onSelectAgent(id); draggedRef.current = false }
+  const clickNode = (id: string) => { if (!draggedRef.current) props.onSelectAgent(id); draggedRef.current = false }
 
   if (props.agents.length === 0) {
     return (
-      <Box sx={{ minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed', borderColor: 'divider', bgcolor: (t) => alpha(t.palette.primary.main, 0.03) }}>
-        <Typography color="text.secondary">Add at least one agent to render the topology.</Typography>
+      <Box sx={{ minHeight: 350, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px dashed', borderColor: 'divider', borderRadius: 3, bgcolor: (t) => alpha(t.palette.primary.main, 0.02) }}>
+        <Typography color="text.secondary" sx={{ fontSize: 15 }}>Add agents to visualize the topology</Typography>
       </Box>
     )
   }
 
   return (
-    <Box sx={{ position: 'relative', border: '1px solid', borderColor: 'divider', borderRadius: 2, bgcolor: '#fafbfc' }}>
-      <Paper elevation={0} sx={{ position: 'absolute', top: 12, right: 12, zIndex: 2, p: 0.5, borderRadius: 10, border: '1px solid', borderColor: 'divider', bgcolor: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(8px)' }}>
+    <Box sx={{ position: 'relative', border: '1px solid', borderColor: 'divider', borderRadius: 3, bgcolor: '#f8fafc', overflow: 'hidden' }}>
+      {/* Controls */}
+      <Paper elevation={2} sx={{ position: 'absolute', top: 12, right: 12, zIndex: 2, px: 0.75, py: 0.5, borderRadius: 12, bgcolor: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)' }}>
         <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center' }}>
           <IconButton size="small" onClick={() => applyZoom(zoom / ZOOM_FACTOR)} aria-label="Zoom out"><RemoveRounded fontSize="small" /></IconButton>
-          <Typography variant="caption" sx={{ minWidth: 40, textAlign: 'center', fontWeight: 700 }}>{Math.round(zoom * 100)}%</Typography>
+          <Typography variant="caption" sx={{ minWidth: 38, textAlign: 'center', fontWeight: 700, fontSize: 11 }}>{Math.round(zoom * 100)}%</Typography>
           <IconButton size="small" onClick={() => applyZoom(zoom * ZOOM_FACTOR)} aria-label="Zoom in"><AddRounded fontSize="small" /></IconButton>
-          <IconButton size="small" onClick={resetView} aria-label="Reset"><RestartAltRounded fontSize="small" /></IconButton>
+          <IconButton size="small" onClick={resetView} aria-label="Fit to view"><CenterFocusStrongRounded fontSize="small" /></IconButton>
         </Stack>
       </Paper>
 
-      <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label="Topology graph"
-        onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={finishPointer} onPointerCancel={finishPointer} onWheel={handleWheel}
-        style={{ display: 'block', height: 'auto', cursor: isPanning ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none' }}>
+      {/* Legend */}
+      <Paper elevation={0} sx={{ position: 'absolute', bottom: 12, left: 12, zIndex: 2, px: 1.5, py: 0.75, borderRadius: 8, bgcolor: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(8px)', border: '1px solid', borderColor: 'divider' }}>
+        <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: COLORS.entry.border }} /><Typography variant="caption" sx={{ fontSize: 10 }}>Entry</Typography></Stack>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: COLORS.mcp.border }} /><Typography variant="caption" sx={{ fontSize: 10 }}>MCP</Typography></Stack>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: COLORS.rag.border }} /><Typography variant="caption" sx={{ fontSize: 10 }}>RAG</Typography></Stack>
+          <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary' }}>Drag to pan · Scroll to zoom</Typography>
+        </Stack>
+      </Paper>
+
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`}
+        width="100%"
+        role="img"
+        aria-label="Agent topology graph"
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        onWheel={onWheel}
+        style={{ display: 'block', height: 'auto', cursor: isPanning ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none', minHeight: 400 }}
+      >
         <defs>
-          <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-            <path d="M 0 0 L 12 6 L 0 12 z" fill="#8a97ac" />
+          {/* Arrow markers */}
+          <marker id="arrow-normal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={COLORS.edge.normal} />
           </marker>
+          <marker id="arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={COLORS.edge.active} />
+          </marker>
+          {/* Node shadow */}
+          <filter id="node-shadow" x="-10%" y="-10%" width="120%" height="130%">
+            <feDropShadow dx="0" dy="4" stdDeviation="6" floodColor="#0f172a" floodOpacity="0.08" />
+          </filter>
+          <filter id="node-glow" x="-15%" y="-15%" width="130%" height="140%">
+            <feDropShadow dx="0" dy="2" stdDeviation="10" floodColor="#0f766e" floodOpacity="0.3" />
+          </filter>
+          {/* Animated dash for flow */}
+          <style>{`
+            @keyframes flow { from { stroke-dashoffset: 20; } to { stroke-dashoffset: 0; } }
+            .edge-flow { animation: flow 1.5s linear infinite; }
+          `}</style>
         </defs>
-        <rect x="0" y="0" width={width} height={height} fill="#fafbfc" />
-        <g transform={`translate(${pan.x} ${pan.y})`}>
-          <g transform={`scale(${zoom})`}>
-            {/* Edges */}
-            {props.edges.map((edge) => {
-              const src = nodeMap.get(edge.sourceId), tgt = nodeMap.get(edge.targetId)
-              if (!src || !tgt) return null
-              const connected = props.selectedAgentId ? edge.sourceId === props.selectedAgentId || edge.targetId === props.selectedAgentId : false
-              const opacity = props.selectedAgentId && !connected ? 0.2 : 0.8
-              const angle = Math.atan2(tgt.y - src.y, tgt.x - src.x)
-              const sx = src.x + Math.cos(angle) * (nodeWidth / 2 - 8)
-              const sy = src.y + Math.sin(angle) * (nodeHeight / 2 - 8)
-              const ex = tgt.x - Math.cos(angle) * (nodeWidth / 2 - 8)
-              const ey = tgt.y - Math.sin(angle) * (nodeHeight / 2 - 8)
-              return (
-                <g key={edge.id} opacity={opacity}>
-                  <line x1={sx} y1={sy} x2={ex} y2={ey} stroke={connected ? '#0f766e' : '#8a97ac'} strokeWidth={2} markerEnd="url(#arrow)" />
-                  <rect x={(sx + ex) / 2 - 18} y={(sy + ey) / 2 - 10} width="36" height="18" rx="9" fill="#fff" stroke={connected ? '#0f766e' : '#dbe3ef'} strokeWidth="0.8" />
-                  <text x={(sx + ex) / 2} y={(sy + ey) / 2 + 4} fontSize="10" fontWeight="700" fill={connected ? '#0f766e' : '#60708f'} textAnchor="middle">{`${Math.round(edge.weight * 100)}%`}</text>
-                </g>
-              )
-            })}
-            {/* Nodes */}
-            {layout.map((node) => {
-              const { incoming, outgoing } = getAgentConnections(node.agent.id, props.edges)
-              const isEntry = props.entryAgents.some((a) => a.id === node.agent.id)
-              const isSelected = props.selectedAgentId === node.agent.id
-              const accent = node.agent.ragEnabled ? '#2f855a' : node.agent.mcpCalls > 0 ? '#d97706' : '#0f766e'
-              return (
-                <g key={node.agent.id} transform={`translate(${node.x - nodeWidth / 2}, ${node.y - nodeHeight / 2})`} onClick={() => handleNodeClick(node.agent.id)} style={{ cursor: 'pointer' }}>
-                  <rect width={nodeWidth} height={nodeHeight} rx="16" fill="#fff" stroke={isSelected ? '#132238' : accent} strokeWidth={isSelected ? 2.5 : 1.5} />
-                  {isEntry && <><rect x={nodeWidth - 52} y="8" width="44" height="18" rx="9" fill="#e0f2fe" /><text x={nodeWidth - 30} y="21" fontSize="9" fontWeight="700" fill="#0f5ea8" textAnchor="middle">ENTRY</text></>}
-                  <text x="14" y="28" fontSize="13" fontWeight="700" fill="#132238">{node.agent.name.slice(0, 20)}</text>
-                  <text x="14" y="46" fontSize="11" fill="#60708f">{getModelLabel(node.agent.model)}</text>
-                  <text x="14" y="66" fontSize="10" fill="#7b8799">{`${node.agent.callsPerConversation} calls · ${node.agent.inputTokensPerCall}/${node.agent.outputTokensPerCall} tok`}</text>
-                  <text x="14" y="84" fontSize="10" fill={node.agent.mcpCalls > 0 ? '#d97706' : '#7b8799'}>{node.agent.mcpCalls > 0 ? `MCP ×${node.agent.mcpCalls} · ${incoming.length} in · ${outgoing.length} out` : `${incoming.length} in · ${outgoing.length} out`}</text>
-                  {node.agent.mcpCalls > 0 && <rect x={nodeWidth - 42} y={nodeHeight - 22} width="34" height="16" rx="8" fill="#fef3c7" stroke="#d97706" strokeWidth="0.8" />}
-                  {node.agent.mcpCalls > 0 && <text x={nodeWidth - 25} y={nodeHeight - 10} fontSize="9" fontWeight="700" fill="#92400e" textAnchor="middle">{`MCP`}</text>}
-                </g>
-              )
-            })}
-          </g>
+
+        {/* Background grid */}
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" strokeWidth="0.5" />
+        </pattern>
+        <rect width={width} height={height} fill="#f8fafc" />
+        <rect width={width} height={height} fill="url(#grid)" opacity="0.5" />
+
+        <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
+          {/* Edges */}
+          {props.edges.map((edge) => {
+            const src = nodeMap.get(edge.sourceId)
+            const tgt = nodeMap.get(edge.targetId)
+            if (!src || !tgt) return null
+
+            const isConnected = props.selectedAgentId
+              ? edge.sourceId === props.selectedAgentId || edge.targetId === props.selectedAgentId
+              : false
+            const dimmed = props.selectedAgentId && !isConnected
+
+            // Edge endpoints at node borders
+            const angle = Math.atan2(tgt.y - src.y, tgt.x - src.x)
+            const srcPt = { x: src.x + Math.cos(angle) * (NODE_W / 2), y: src.y + Math.sin(angle) * (NODE_H / 2 - 4) }
+            const tgtPt = { x: tgt.x - Math.cos(angle) * (NODE_W / 2), y: tgt.y - Math.sin(angle) * (NODE_H / 2 - 4) }
+            const path = computeBezierPath(srcPt, tgtPt)
+            const midX = (srcPt.x + tgtPt.x) / 2
+            const midY = (srcPt.y + tgtPt.y) / 2
+
+            return (
+              <g key={edge.id} opacity={dimmed ? 0.15 : 1}>
+                {/* Shadow path */}
+                <path d={path} fill="none" stroke={isConnected ? COLORS.edge.active : COLORS.edge.normal} strokeWidth={isConnected ? 2.5 : 1.8} markerEnd={isConnected ? 'url(#arrow-active)' : 'url(#arrow-normal)'} />
+                {/* Animated flow overlay */}
+                {isConnected && (
+                  <path d={path} fill="none" stroke={COLORS.edge.active} strokeWidth={2} strokeDasharray="6 14" className="edge-flow" opacity={0.6} />
+                )}
+                {/* Weight label */}
+                <rect x={midX - 20} y={midY - 11} width="40" height="20" rx="10" fill="#fff" stroke={isConnected ? COLORS.edge.active : '#e2e8f0'} strokeWidth="1" />
+                <text x={midX} y={midY + 4} fontSize="10" fontWeight="700" fill={isConnected ? COLORS.edge.active : COLORS.edge.label} textAnchor="middle">
+                  {`${Math.round(edge.weight * 100)}%`}
+                </text>
+              </g>
+            )
+          })}
+
+          {/* Nodes */}
+          {layout.map((node) => {
+            const { incoming, outgoing } = getAgentConnections(node.agent.id, props.edges)
+            const isEntry = props.entryAgents.some((a) => a.id === node.agent.id)
+            const isSelected = props.selectedAgentId === node.agent.id
+            const colors = getNodeColors(node.agent, isEntry)
+            const share = trafficShares.get(node.agent.id) ?? 1
+            const dimmed = props.selectedAgentId && !isSelected && !props.edges.some((e) => (e.sourceId === props.selectedAgentId && e.targetId === node.agent.id) || (e.targetId === props.selectedAgentId && e.sourceId === node.agent.id))
+
+            return (
+              <g
+                key={node.agent.id}
+                transform={`translate(${node.x - NODE_W / 2}, ${node.y - NODE_H / 2})`}
+                onClick={() => clickNode(node.agent.id)}
+                style={{ cursor: 'pointer' }}
+                opacity={dimmed ? 0.3 : 1}
+              >
+                {/* Card */}
+                <rect
+                  width={NODE_W} height={NODE_H} rx="14"
+                  fill={colors.bg}
+                  stroke={isSelected ? COLORS.selected.border : colors.border}
+                  strokeWidth={isSelected ? 2.5 : 1.5}
+                  filter={isSelected ? 'url(#node-glow)' : 'url(#node-shadow)'}
+                />
+                {/* Top accent bar */}
+                <rect x="0" y="0" width={NODE_W} height="4" rx="14" fill={colors.border} opacity={0.6} />
+
+                {/* Entry badge */}
+                {isEntry && (
+                  <g>
+                    <rect x={NODE_W - 56} y="10" width="46" height="18" rx="9" fill="#ecfdf5" stroke="#059669" strokeWidth="0.8" />
+                    <text x={NODE_W - 33} y="23" fontSize="9" fontWeight="700" fill="#065f46" textAnchor="middle">ENTRY</text>
+                  </g>
+                )}
+
+                {/* Agent name */}
+                <text x="14" y="26" fontSize="13" fontWeight="700" fill="#0f172a">{node.agent.name.length > 22 ? node.agent.name.slice(0, 20) + '…' : node.agent.name}</text>
+
+                {/* Model + traffic share */}
+                <text x="14" y="44" fontSize="10.5" fill="#64748b">{getModelLabel(node.agent.model)} · {Math.round(share * 100)}% traffic</text>
+
+                {/* Token info */}
+                <text x="14" y="62" fontSize="10" fill="#94a3b8">
+                  {`${node.agent.callsPerConversation} call${node.agent.callsPerConversation > 1 ? 's' : ''} · ${node.agent.inputTokensPerCall} in / ${node.agent.outputTokensPerCall} out`}
+                </text>
+
+                {/* Routing info */}
+                <text x="14" y="78" fontSize="10" fill="#94a3b8">
+                  {`${incoming.length} in · ${outgoing.length} out`}
+                </text>
+
+                {/* Badges row */}
+                {(node.agent.mcpCalls > 0 || node.agent.ragEnabled) && (
+                  <g>
+                    {node.agent.mcpCalls > 0 && (
+                      <g>
+                        <rect x="14" y={NODE_H - 24} width={42 + (node.agent.mcpCalls > 9 ? 6 : 0)} height="18" rx="9" fill="#fef3c7" stroke="#d97706" strokeWidth="0.7" />
+                        <text x={14 + 21 + (node.agent.mcpCalls > 9 ? 3 : 0)} y={NODE_H - 11} fontSize="9" fontWeight="700" fill="#92400e" textAnchor="middle">{`MCP ×${node.agent.mcpCalls}`}</text>
+                      </g>
+                    )}
+                    {node.agent.ragEnabled && (
+                      <g>
+                        <rect x={node.agent.mcpCalls > 0 ? 64 : 14} y={NODE_H - 24} width="34" height="18" rx="9" fill="#dcfce7" stroke="#16a34a" strokeWidth="0.7" />
+                        <text x={(node.agent.mcpCalls > 0 ? 64 : 14) + 17} y={NODE_H - 11} fontSize="9" fontWeight="700" fill="#15803d" textAnchor="middle">RAG</text>
+                      </g>
+                    )}
+                  </g>
+                )}
+              </g>
+            )
+          })}
         </g>
       </svg>
     </Box>

@@ -78,7 +78,7 @@ import { TopologyCanvas } from './components/organisms/TopologyCanvas'
 import { TokenToolInlineButton } from './components/TokenTool'
 
 const PAYPAL_DONATE_URL = (import.meta.env.VITE_PAYPAL_DONATE_URL ?? '').trim()
-const APP_VERSION = '2.0.0'
+const APP_VERSION = __APP_VERSION__
 
 const WORKSPACE_ADJECTIVES = ['Swift', 'Bright', 'Calm', 'Bold', 'Keen', 'Warm', 'Sharp', 'Clear', 'Fresh', 'Vivid', 'Noble', 'Agile', 'Rapid', 'Steady', 'Smart']
 const WORKSPACE_NOUNS = ['Falcon', 'Horizon', 'Summit', 'Compass', 'Beacon', 'Orbit', 'Prism', 'Atlas', 'Spark', 'Vertex', 'Pulse', 'Nexus', 'Forge', 'Crest', 'Wave']
@@ -117,7 +117,7 @@ export default function App() {
   })
 
   // UI state
-  const [activeTab, setActiveTab] = useState<'calculator' | 'topology' | 'pricing' | 'token-tool'>('calculator')
+  const [activeTab, setActiveTab] = useState<'calculator' | 'topology' | 'pricing' | 'token-tool' | 'help'>('calculator')
   const [topoSelectedId, setTopoSelectedId] = useState<string | null>(null)
   const [snackbar, setSnackbar] = useState<{ severity: 'success' | 'error' | 'info'; message: string } | null>(null)
   const [samplesAnchor, setSamplesAnchor] = useState<HTMLElement | null>(null)
@@ -186,17 +186,17 @@ export default function App() {
     if (!sample) return
     setAgents(sample.agents.map((a) => ({ ...a })))
     setEdges(sample.edges.map((e) => ({ ...e })))
-    // Derive users/conversations from the sample's monthly volume (assume 10 conv/user/month)
     const convPerUser = 10
     const users = Math.round(sample.conversationsPerMonth / convPerUser)
     setEstimateConfig(createEstimateConfig(users, convPerUser, 'month'))
+    setWorkspaceName(sample.label)
     setSnackbar({ severity: 'success', message: `Loaded: ${sample.label}` })
   }
 
   const exportWorkspace = () => {
     const doc = createTopologyDocument(agents, safeEdges, estimateConfig, pricing)
     const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })
-    downloadBlob(blob, `toki-${new Date().toISOString().slice(0, 10)}.json`)
+    downloadBlob(blob, `${fileSlug()}-workspace.json`)
     setSnackbar({ severity: 'success', message: 'Workspace exported as JSON.' })
   }
 
@@ -220,50 +220,96 @@ export default function App() {
     })
     const totalRow = ['TOTAL', '', '', '', '', '', '', '', '', '', '', '', '', estimate.totalInputTokens, estimate.totalOutputTokens, estimate.totalEmbeddingTokens, estimate.totalTokensPerMonth, estimate.totalCostPerMonth.toFixed(4)]
     const csvRows = [...meta, headers, ...rows, totalRow].map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
-    downloadBlob(new Blob([csvRows], { type: 'text/csv' }), `toki-estimate-${new Date().toISOString().slice(0, 10)}.csv`)
+    downloadBlob(new Blob([csvRows], { type: 'text/csv' }), `${fileSlug()}-estimate.csv`)
     setSnackbar({ severity: 'success', message: 'Estimate exported as CSV.' })
   }
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
     if (agents.length === 0) { setSnackbar({ severity: 'info', message: 'Add agents before exporting.' }); return }
-    // Generate an XML Spreadsheet (Excel-compatible .xls) without external dependencies
-    const headers = ['Agent', 'Model', 'Calls/Conv', 'Input Tok/Call', 'Output Tok/Call', 'MCP Calls', 'MCP Tok/Call', 'RAG Chunks', 'RAG Tok/Chunk', 'Embed Tok', 'Calls/Month', 'Input Tok/Month', 'Output Tok/Month', 'Embed Tok/Month', 'Total Tok/Month', 'Cost/Month (EUR)']
-    const rows = estimate.agents.map((a) => {
+
+    const ExcelJS = (await import('exceljs')).default
+    const workbook = new ExcelJS.Workbook()
+    workbook.creator = 'Toki'
+    workbook.created = new Date()
+
+    // --- Sheet 1: Estimate ---
+    const ws = workbook.addWorksheet('Estimate')
+    const headers = ['Agent', 'Model', 'Traffic %', 'Calls/Conv', 'Input Tok/Call', 'Output Tok/Call', 'MCP Calls', 'MCP Out Tok', 'MCP In Tok', 'RAG Chunks', 'Chunk Tok', 'Embed Tok', 'Calls/Month', 'Input Tok/Month', 'Output Tok/Month', 'Embed Tok/Month', 'Total Tok/Month', 'Cost/Month (EUR)']
+    const headerRow = ws.addRow(headers)
+    headerRow.font = { bold: true }
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }
+
+    const dataStartRow = 2
+    estimate.agents.forEach((a, i) => {
       const agent = agents.find((ag) => ag.id === a.id)
-      return [
-        a.name, a.model, agent?.callsPerConversation ?? 0, agent?.inputTokensPerCall ?? 0, agent?.outputTokensPerCall ?? 0,
-        agent?.mcpCalls ?? 0, agent?.mcpOutputTokensPerCall ?? 0, agent?.ragChunks ?? 0, agent?.ragChunkTokens ?? 0, agent?.ragEmbeddingTokens ?? 0,
-        a.callsPerMonth, a.inputTokensPerMonth, a.outputTokensPerMonth, a.embeddingTokensPerMonth, a.totalTokensPerMonth, a.costPerMonth,
-      ]
+      const r = dataStartRow + i
+      const row = ws.addRow([
+        a.name, a.model, Math.round(a.trafficShare * 100),
+        agent?.callsPerConversation ?? 0, agent?.inputTokensPerCall ?? 0, agent?.outputTokensPerCall ?? 0,
+        agent?.mcpCalls ?? 0, agent?.mcpOutputTokensPerCall ?? 0, agent?.mcpInputTokensPerCall ?? 0,
+        agent?.ragChunks ?? 0, agent?.ragChunkTokens ?? 0, agent?.ragEmbeddingTokens ?? 0,
+        a.callsPerMonth, a.inputTokensPerMonth, a.outputTokensPerMonth, a.embeddingTokensPerMonth,
+        // Col Q: Total Tok/Month (formula)
+        null,
+        // Col R: Cost/Month
+        a.costPerMonth,
+      ])
+      // Set formula for Total Tokens (col 17 = Q): =N+O+P
+      row.getCell(17).value = { formula: `N${r}+O${r}+P${r}`, result: a.totalTokensPerMonth }
+      row.getCell(18).numFmt = '€#,##0.0000'
     })
-    const totalRow = ['TOTAL', '', '', '', '', '', '', '', '', '', '', estimate.totalInputTokens, estimate.totalOutputTokens, estimate.totalEmbeddingTokens, estimate.totalTokensPerMonth, estimate.totalCostPerMonth]
 
-    const escXml = (v: unknown) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    const toCell = (v: unknown) => typeof v === 'number' ? `<Cell><Data ss:Type="Number">${v}</Data></Cell>` : `<Cell><Data ss:Type="String">${escXml(v)}</Data></Cell>`
-    const toRow = (cells: unknown[]) => `<Row>${cells.map(toCell).join('')}</Row>`
+    // Total row with SUM formulas
+    const lastDataRow = dataStartRow + estimate.agents.length - 1
+    const totalRow = ws.addRow([
+      'TOTAL', '', '', '', '', '', '', '', '', '', '', '',
+      null, null, null, null, null, null,
+    ])
+    totalRow.font = { bold: true }
+    totalRow.getCell(13).value = { formula: `SUM(M${dataStartRow}:M${lastDataRow})`, result: estimate.agents.reduce((s, a) => s + a.callsPerMonth, 0) }
+    totalRow.getCell(14).value = { formula: `SUM(N${dataStartRow}:N${lastDataRow})`, result: estimate.totalInputTokens }
+    totalRow.getCell(15).value = { formula: `SUM(O${dataStartRow}:O${lastDataRow})`, result: estimate.totalOutputTokens }
+    totalRow.getCell(16).value = { formula: `SUM(P${dataStartRow}:P${lastDataRow})`, result: estimate.totalEmbeddingTokens }
+    totalRow.getCell(17).value = { formula: `SUM(Q${dataStartRow}:Q${lastDataRow})`, result: estimate.totalTokensPerMonth }
+    totalRow.getCell(18).value = { formula: `SUM(R${dataStartRow}:R${lastDataRow})`, result: estimate.totalCostPerMonth }
+    totalRow.getCell(18).numFmt = '€#,##0.0000'
 
-    const xml = `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-<Worksheet ss:Name="Toki Estimate"><Table>
-${toRow(headers)}
-${rows.map(toRow).join('\n')}
-${toRow(totalRow)}
-</Table></Worksheet>
-<Worksheet ss:Name="Summary"><Table>
-<Row><Cell><Data ss:Type="String">Metric</Data></Cell><Cell><Data ss:Type="String">Value</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">Users</Data></Cell><Cell><Data ss:Type="Number">${estimateConfig.users}</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">Conversations per user</Data></Cell><Cell><Data ss:Type="Number">${estimateConfig.conversationsPerUser}</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">Time range</Data></Cell><Cell><Data ss:Type="String">${estimateConfig.timeRange}</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">Conversations/Month</Data></Cell><Cell><Data ss:Type="Number">${estimateConfig.conversationsPerMonth}</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">Total Tokens/Month</Data></Cell><Cell><Data ss:Type="Number">${estimate.totalTokensPerMonth}</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">Total Cost/Month (EUR)</Data></Cell><Cell><Data ss:Type="Number">${estimate.totalCostPerMonth}</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">Cost/Conversation (EUR)</Data></Cell><Cell><Data ss:Type="Number">${estimate.costPerConversation}</Data></Cell></Row>
-<Row><Cell><Data ss:Type="String">Agents</Data></Cell><Cell><Data ss:Type="Number">${agents.length}</Data></Cell></Row>
-</Table></Worksheet>
-</Workbook>`
+    // Auto-width columns
+    ws.columns.forEach((col) => { col.width = 16 })
+    ws.getColumn(1).width = 24
+    ws.getColumn(2).width = 20
 
-    downloadBlob(new Blob([xml], { type: 'application/vnd.ms-excel' }), `toki-estimate-${new Date().toISOString().slice(0, 10)}.xls`)
-    setSnackbar({ severity: 'success', message: 'Estimate exported as Excel.' })
+    // --- Sheet 2: Summary ---
+    const totalRowNum = lastDataRow + 1
+    const summary = workbook.addWorksheet('Summary')
+    const sumHeader = summary.addRow(['Metric', 'Value'])
+    sumHeader.font = { bold: true }
+    summary.addRow(['Users', estimateConfig.users])
+    summary.addRow(['Conversations per user', estimateConfig.conversationsPerUser])
+    summary.addRow(['Time range', estimateConfig.timeRange])
+    summary.addRow(['Conversations/Month', estimateConfig.conversationsPerMonth])
+    // Row 6: Total Tokens references Estimate sheet
+    const tokRow = summary.addRow(['Total Tokens/Month', null])
+    tokRow.getCell(2).value = { formula: `Estimate!Q${totalRowNum}`, result: estimate.totalTokensPerMonth }
+    // Row 7: Total Cost references Estimate sheet
+    const costRow = summary.addRow(['Total Cost/Month (EUR)', null])
+    costRow.getCell(2).value = { formula: `Estimate!R${totalRowNum}`, result: estimate.totalCostPerMonth }
+    costRow.getCell(2).numFmt = '€#,##0.0000'
+    // Row 8: Cost/Conversation = TotalCost / Conversations
+    const cpcRow = summary.addRow(['Cost/Conversation (EUR)', null])
+    cpcRow.getCell(2).value = { formula: `B7/B5`, result: estimate.costPerConversation }
+    cpcRow.getCell(2).numFmt = '€#,##0.000000'
+    summary.addRow(['Agents', agents.length])
+    summary.addRow(['Confidence', estimate.confidence])
+    summary.addRow(['Best case (EUR/month)', estimate.bestCaseCostPerMonth])
+    summary.addRow(['Worst case (EUR/month)', estimate.worstCaseCostPerMonth])
+    summary.getColumn(1).width = 28
+    summary.getColumn(2).width = 20
+
+    // --- Generate and download ---
+    const buffer = await workbook.xlsx.writeBuffer()
+    downloadBlob(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${fileSlug()}-estimate.xlsx`)
+    setSnackbar({ severity: 'success', message: 'Estimate exported as Excel (.xlsx).' })
   }
 
   function downloadBlob(blob: Blob, filename: string) {
@@ -275,6 +321,10 @@ ${toRow(totalRow)}
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
+  }
+
+  function fileSlug() {
+    return workspaceName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'toki'
   }
 
   const shareWorkspace = async () => {
@@ -309,17 +359,26 @@ ${toRow(totalRow)}
 
   const copyEstimate = async () => {
     const lines = [
-      `Monthly cost: ${formatCost(estimate.totalCostPerMonth)}`,
-      `Cost per conversation: ${formatCost(estimate.costPerConversation)}`,
-      `Monthly tokens: ${formatMetricNumber(estimate.totalTokensPerMonth)}`,
-      `Conversations/month: ${estimateConfig.conversationsPerMonth.toLocaleString()}`,
+      `Workspace: ${workspaceName}`,
+      `Conversations/month: ${estimateConfig.conversationsPerMonth.toLocaleString()} (${estimateConfig.users} users × ${estimateConfig.conversationsPerUser} conv/${estimateConfig.timeRange})`,
+      `Monthly tokens: ${formatMetricNumber(estimate.totalTokensPerMonth)} (${formatMetricNumber(estimate.totalInputTokens)} in / ${formatMetricNumber(estimate.totalOutputTokens)} out)`,
       `Agents: ${agents.length}`,
       '',
-      ...estimate.agents.map((a) => `  ${a.name} (${getModelLabel(a.model)}): ${formatCost(a.costPerMonth)}/mo — ${formatMetricNumber(a.totalTokensPerMonth)} tokens`),
+      ...estimate.agents.map((a) => {
+        const agent = agents.find((ag) => ag.id === a.id)
+        const parts = [
+          `${a.name} (${getModelLabel(a.model)})`,
+          `${Math.round(a.trafficShare * 100)}% traffic`,
+          `${formatMetricNumber(a.totalTokensPerMonth)} tok/mo`,
+        ]
+        if (agent?.mcpCalls) parts.push(`MCP ×${agent.mcpCalls}`)
+        if (agent?.ragEnabled) parts.push(`RAG ${agent.ragChunks} chunks`)
+        return `  ${parts.join(' · ')}`
+      }),
     ]
     try {
       await navigator.clipboard.writeText(lines.join('\n'))
-      setSnackbar({ severity: 'success', message: 'Estimate copied.' })
+      setSnackbar({ severity: 'success', message: 'Estimate copied (tokens + traffic).' })
     } catch { setSnackbar({ severity: 'error', message: 'Copy failed.' }) }
   }
 
@@ -331,20 +390,22 @@ ${toRow(totalRow)}
       <Paper elevation={1} sx={{ px: { xs: 2, md: 3 }, py: 1.5, background: 'linear-gradient(135deg, #0b1523 0%, #102238 54%, #143149 100%)', color: '#f7fafc', position: 'sticky', top: 0, zIndex: 1100 }}>
         <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
           <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-            <TokiLogo light caption="Token Cost Calculator" />
+            <Box onClick={() => setActiveTab('calculator')} sx={{ cursor: 'pointer' }}>
+              <TokiLogo light caption="Token Cost Calculator" />
+            </Box>
             <Divider orientation="vertical" flexItem sx={{ borderColor: 'rgba(255,255,255,0.15)', display: { xs: 'none', md: 'block' } }} />
             <TextField
               variant="standard"
               value={workspaceName}
               onChange={(e) => setWorkspaceName(e.target.value)}
-              slotProps={{ input: { disableUnderline: true, sx: { color: '#f7fafc', fontSize: 14, fontWeight: 600, '&::placeholder': { color: 'rgba(255,255,255,0.5)' } } } }}
-              placeholder="Workspace name"
-              sx={{ display: { xs: 'none', md: 'flex' }, minWidth: 200 }}
+              slotProps={{ input: { sx: { color: '#f7fafc', fontSize: 14, fontWeight: 600, '&::placeholder': { color: 'rgba(255,255,255,0.5)' }, '&::before': { borderBottomColor: 'rgba(255,255,255,0.2) !important' }, '&::after': { borderBottomColor: '#5eead4' }, '&:hover::before': { borderBottomColor: 'rgba(255,255,255,0.5) !important' } } } }}
+              placeholder="Click to name this workspace"
+              sx={{ display: { xs: 'none', md: 'flex' }, minWidth: 220, '& .MuiInput-root': { cursor: 'text' } }}
             />
           </Stack>
           <Stack direction="row" spacing={0.5}>
-            <Tooltip title="Donate"><IconButton size="small" sx={{ color: '#f7fafc' }} onClick={() => PAYPAL_DONATE_URL ? window.open(PAYPAL_DONATE_URL, '_blank') : setSnackbar({ severity: 'info', message: 'Set VITE_PAYPAL_DONATE_URL to enable.' })}><FavoriteRounded fontSize="small" /></IconButton></Tooltip>
-            <Tooltip title="Contact"><IconButton size="small" sx={{ color: '#f7fafc' }} onClick={() => setSnackbar({ severity: 'info', message: 'Contact: formspree.io/f/xzdwwwzv' })}><MailOutlineRounded fontSize="small" /></IconButton></Tooltip>
+            {!__GITHUB_PAGES__ && <Tooltip title="Donate"><IconButton size="small" sx={{ color: '#f7fafc' }} onClick={() => PAYPAL_DONATE_URL ? window.open(PAYPAL_DONATE_URL, '_blank') : setSnackbar({ severity: 'info', message: 'Set VITE_PAYPAL_DONATE_URL to enable.' })}><FavoriteRounded fontSize="small" /></IconButton></Tooltip>}
+            {!__GITHUB_PAGES__ && <Tooltip title="Contact"><IconButton size="small" sx={{ color: '#f7fafc' }} onClick={() => setSnackbar({ severity: 'info', message: 'Contact: formspree.io/f/xzdwwwzv' })}><MailOutlineRounded fontSize="small" /></IconButton></Tooltip>}
           </Stack>
         </Stack>
       </Paper>
@@ -396,6 +457,7 @@ ${toRow(totalRow)}
             <Tab disabled icon={<Divider orientation="vertical" sx={{ height: 20 }} />} sx={{ minWidth: 8, px: 0, opacity: '1 !important' }} value="" />
             <Tab label="Pricing" value="pricing" />
             <Tab label="Token Tool" value="token-tool" />
+            <Tab label="Help" value="help" />
           </Tabs>
         </Stack>
       </Paper>
@@ -583,6 +645,16 @@ ${toRow(totalRow)}
                     </Grid>
                   </Grid>
 
+                  {/* Traffic volume summary */}
+                  {estimateConfig.conversationsPerMonth > 0 && (
+                    <Box sx={{ px: 1.5, py: 1, bgcolor: 'rgba(19,34,56,0.02)', borderRadius: 1.5, border: '1px solid rgba(19,34,56,0.06)' }}>
+                      <Stack direction="row" sx={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">{estimateConfig.users.toLocaleString()} users × {estimateConfig.conversationsPerUser} conv/{estimateConfig.timeRange}</Typography>
+                        <Typography variant="caption" sx={{ fontWeight: 700 }}>{estimateConfig.conversationsPerMonth.toLocaleString()} conv/mo</Typography>
+                      </Stack>
+                    </Box>
+                  )}
+
                   {/* Best / Worst case range */}
                   {estimate.totalCostPerMonth > 0 && (
                     <Stack direction="row" spacing={1} sx={{ justifyContent: 'center' }}>
@@ -643,25 +715,126 @@ ${toRow(totalRow)}
           </Grid>
         ) : activeTab === 'topology' ? (
           /* Topology tab */
-          <Paper sx={{ p: 2.5 }}>
-            <Typography variant="h6" sx={{ mb: 1 }}>System topology</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Visual map of agents and connections. Click a node to highlight its edges.
-            </Typography>
-            <TopologyCanvas
-              agents={agents}
-              edges={safeEdges}
-              entryAgents={entryAgents}
-              selectedAgentId={topoSelectedId}
-              report={null}
-              workspacePricing={pricing}
-              onSelectAgent={setTopoSelectedId}
-            />
-          </Paper>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, lg: topoSelectedId ? 8 : 12 }}>
+              <Paper sx={{ p: 2.5 }}>
+                <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                  <Box>
+                    <Typography variant="h6">System topology</Typography>
+                    <Typography variant="body2" color="text.secondary">Click a node to inspect. Double-click to isolate its subgraph.</Typography>
+                  </Box>
+                  {topoSelectedId && (
+                    <Button size="small" variant="outlined" onClick={() => setTopoSelectedId(null)}>Clear selection</Button>
+                  )}
+                </Stack>
+                <TopologyCanvas
+                  agents={agents}
+                  edges={safeEdges}
+                  entryAgents={entryAgents}
+                  selectedAgentId={topoSelectedId}
+                  report={null}
+                  workspacePricing={pricing}
+                  onSelectAgent={setTopoSelectedId}
+                />
+              </Paper>
+            </Grid>
+            {topoSelectedId && (() => {
+              const selectedAgent = agents.find((a) => a.id === topoSelectedId)
+              const agentCost = estimate.agents.find((a) => a.id === topoSelectedId)
+              if (!selectedAgent) return null
+              const incoming = safeEdges.filter((e) => e.targetId === topoSelectedId)
+              const outgoing = safeEdges.filter((e) => e.sourceId === topoSelectedId)
+              const otherAgents = agents.filter((a) => a.id !== topoSelectedId)
+              return (
+                <Grid size={{ xs: 12, lg: 4 }}>
+                  <Paper sx={{ p: 2, position: { lg: 'sticky' }, top: { lg: 16 } }}>
+                    {/* Header with cost badge */}
+                    <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                      <Chip size="small" label={`${Math.round((agentCost?.trafficShare ?? 1) * 100)}% traffic`} color="primary" variant="outlined" />
+                      <Chip size="small" label={`${formatCost(agentCost?.costPerMonth ?? 0)}/mo`} color="success" />
+                    </Stack>
+
+                    {/* Editable fields */}
+                    <Stack spacing={1.5}>
+                      <TextField size="small" label="Name" value={selectedAgent.name} onChange={(e) => updateAgent(topoSelectedId, { name: e.target.value })} fullWidth />
+                      <FormControl size="small" fullWidth>
+                        <InputLabel>Model</InputLabel>
+                        <Select label="Model" value={selectedAgent.model} onChange={(e) => updateAgent(topoSelectedId, { model: String(e.target.value) })}>
+                          {modelOptions.map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+                        </Select>
+                      </FormControl>
+                      <Grid container spacing={1}>
+                        <Grid size={4}><TextField size="small" type="number" label="Calls/conv" value={selectedAgent.callsPerConversation} onChange={(e) => updateAgent(topoSelectedId, { callsPerConversation: Math.max(0, toNumber(e.target.value, 1)) })} fullWidth /></Grid>
+                        <Grid size={4}><TextField size="small" type="number" label="In tok" value={selectedAgent.inputTokensPerCall} onChange={(e) => updateAgent(topoSelectedId, { inputTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, 0))) })} fullWidth /></Grid>
+                        <Grid size={4}><TextField size="small" type="number" label="Out tok" value={selectedAgent.outputTokensPerCall} onChange={(e) => updateAgent(topoSelectedId, { outputTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, 0))) })} fullWidth /></Grid>
+                      </Grid>
+                      <Grid container spacing={1}>
+                        <Grid size={4}><TextField size="small" type="number" label="MCP calls" value={selectedAgent.mcpCalls} onChange={(e) => updateAgent(topoSelectedId, { mcpCalls: Math.max(0, Math.round(toNumber(e.target.value, 0))) })} fullWidth /></Grid>
+                        <Grid size={4}><TextField size="small" type="number" label="MCP in" value={selectedAgent.mcpInputTokensPerCall} onChange={(e) => updateAgent(topoSelectedId, { mcpInputTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, 0))) })} fullWidth disabled={selectedAgent.mcpCalls === 0} /></Grid>
+                        <Grid size={4}><TextField size="small" type="number" label="MCP out" value={selectedAgent.mcpOutputTokensPerCall} onChange={(e) => updateAgent(topoSelectedId, { mcpOutputTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, 0))) })} fullWidth disabled={selectedAgent.mcpCalls === 0} /></Grid>
+                      </Grid>
+                    </Stack>
+
+                    {/* Computed metrics */}
+                    <Box sx={{ mt: 1.5, p: 1, bgcolor: 'rgba(15,118,110,0.04)', borderRadius: 1 }}>
+                      <Grid container spacing={0.5}>
+                        <Grid size={6}><Typography variant="caption" color="text.secondary">Tokens/mo</Typography><Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }}>{formatMetricNumber(agentCost?.totalTokensPerMonth ?? 0)}</Typography></Grid>
+                        <Grid size={6}><Typography variant="caption" color="text.secondary">Calls/mo</Typography><Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }}>{formatMetricNumber(agentCost?.callsPerMonth ?? 0)}</Typography></Grid>
+                      </Grid>
+                    </Box>
+
+                    <Divider sx={{ my: 1.5 }} />
+
+                    {/* Connections — editable */}
+                    <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>Incoming ({incoming.length})</Typography>
+                    {incoming.length === 0 ? (
+                      <Typography variant="caption" color="text.secondary">Entry point — receives all traffic</Typography>
+                    ) : (
+                      <Stack spacing={0.5}>
+                        {incoming.map((e) => (
+                          <Stack key={e.id} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                            <Chip size="small" label={agents.find((a) => a.id === e.sourceId)?.name ?? '?'} variant="outlined" onClick={() => setTopoSelectedId(e.sourceId)} sx={{ cursor: 'pointer', flex: 1 }} />
+                            <TextField size="small" type="number" value={Math.round(e.weight * 100)} sx={{ width: 60 }} slotProps={{ htmlInput: { min: 0, max: 100, step: 5 } }} onChange={(ev) => updateEdge(e.id, { weight: Math.max(0, Math.min(1, toNumber(ev.target.value, 0) / 100)) })} />
+                            <Typography variant="caption">%</Typography>
+                            <IconButton size="small" color="error" onClick={() => removeEdge(e.id)}><DeleteOutlineRounded sx={{ fontSize: 14 }} /></IconButton>
+                          </Stack>
+                        ))}
+                      </Stack>
+                    )}
+
+                    <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mt: 1.5, mb: 0.5 }}>Outgoing ({outgoing.length})</Typography>
+                    {outgoing.map((e) => (
+                      <Stack key={e.id} direction="row" spacing={0.5} sx={{ alignItems: 'center', mb: 0.5 }}>
+                        <Chip size="small" label={agents.find((a) => a.id === e.targetId)?.name ?? '?'} variant="outlined" color="primary" onClick={() => setTopoSelectedId(e.targetId)} sx={{ cursor: 'pointer', flex: 1 }} />
+                        <TextField size="small" type="number" value={Math.round(e.weight * 100)} sx={{ width: 60 }} slotProps={{ htmlInput: { min: 0, max: 100, step: 5 } }} onChange={(ev) => updateEdge(e.id, { weight: Math.max(0, Math.min(1, toNumber(ev.target.value, 0) / 100)) })} />
+                        <Typography variant="caption">%</Typography>
+                        <IconButton size="small" color="error" onClick={() => removeEdge(e.id)}><DeleteOutlineRounded sx={{ fontSize: 14 }} /></IconButton>
+                      </Stack>
+                    ))}
+
+                    {/* Add connection */}
+                    {otherAgents.length > 0 && (
+                      <Button size="small" variant="text" sx={{ mt: 1, fontSize: 11 }} onClick={() => {
+                        const target = otherAgents[0]
+                        setEdges((cur) => [...cur, { id: createId('edge'), sourceId: topoSelectedId, targetId: target.id, weight: 0.5 }])
+                      }}>+ Add outgoing connection</Button>
+                    )}
+
+                    <Divider sx={{ my: 1.5 }} />
+
+                    {/* Delete agent */}
+                    <Button size="small" color="error" variant="outlined" fullWidth onClick={() => { removeAgent(topoSelectedId); setTopoSelectedId(null) }}>
+                      Delete this agent
+                    </Button>
+                  </Paper>
+                </Grid>
+              )
+            })()}
+          </Grid>
         ) : activeTab === 'token-tool' ? (
           /* Token Tool tab — inline version */
           <TokenToolTab />
-        ) : (
+        ) : activeTab === 'pricing' ? (
           /* Pricing tab */
           <Paper sx={{ p: 2.5 }}>
             <Typography variant="h6" sx={{ mb: 0.5 }}>Model pricing</Typography>
@@ -762,6 +935,24 @@ ${toRow(totalRow)}
               </Table>
             </Box>
           </Paper>
+        ) : (
+          /* Help tab — embedded reveal.js presentation */
+          <Paper sx={{ p: 0, overflow: 'hidden', borderRadius: 3, position: 'relative' }}>
+            <Button
+              size="small"
+              variant="contained"
+              onClick={() => window.open('/help.html', '_blank')}
+              sx={{ position: 'absolute', top: 12, right: 12, zIndex: 10, bgcolor: 'rgba(15, 23, 42, 0.85)', '&:hover': { bgcolor: 'rgba(15, 23, 42, 0.95)' } }}
+            >
+              Open fullscreen ↗
+            </Button>
+            <Box
+              component="iframe"
+              src="/help.html"
+              sx={{ width: '100%', height: 'calc(100vh - 180px)', border: 'none', display: 'block' }}
+              title="Toki Help & Presentation"
+            />
+          </Paper>
         )}
       </Container>
 
@@ -772,7 +963,7 @@ ${toRow(totalRow)}
             Toki v{APP_VERSION} — Token cost calculator for agentic systems
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Created by Vincenzo MARAFIOTI
+            Created with love and vibe coding.
           </Typography>
         </Stack>
       </Box>

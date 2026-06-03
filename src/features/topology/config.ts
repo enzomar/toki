@@ -12,29 +12,31 @@ export type RoutingModeOption = {
 }
 
 export const MODEL_OPTIONS: ModelOption[] = [
-  { value: 'gpt-5', label: 'GPT-5' },
-  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-  { value: 'gpt-4o', label: 'GPT-4o' },
   { value: 'gpt-4.1', label: 'GPT-4.1' },
   { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
   { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano' },
+  { value: 'gpt-4o', label: 'GPT-4o' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+  { value: 'o3', label: 'o3 (reasoning)' },
+  { value: 'o4-mini', label: 'o4-mini (reasoning)' },
   { value: 'claude-sonnet-4', label: 'Claude Sonnet 4' },
-  { value: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
-  { value: 'claude-3-5-haiku', label: 'Claude 3.5 Haiku' },
+  { value: 'claude-haiku-4', label: 'Claude Haiku 4' },
+  { value: 'claude-opus-4', label: 'Claude Opus 4' },
 ]
 
 export const PRICING_TOKENS_PER_UNIT = 1_000_000
 
 export const PRICING: Record<string, { in: number; out: number }> = {
-  'gpt-5': { in: 10, out: 40 },
-  'gpt-4o-mini': { in: 0.15, out: 0.6 },
-  'gpt-4o': { in: 2.5, out: 10 },
-  'gpt-4.1': { in: 2, out: 8 },
-  'gpt-4.1-mini': { in: 0.4, out: 1.6 },
-  'gpt-4.1-nano': { in: 0.1, out: 0.4 },
-  'claude-sonnet-4': { in: 3, out: 15 },
-  'claude-3-5-sonnet': { in: 3, out: 15 },
-  'claude-3-5-haiku': { in: 0.8, out: 4 },
+  'gpt-4.1': { in: 2.00, out: 8.00 },
+  'gpt-4.1-mini': { in: 0.40, out: 1.60 },
+  'gpt-4.1-nano': { in: 0.10, out: 0.40 },
+  'gpt-4o': { in: 2.50, out: 10.00 },
+  'gpt-4o-mini': { in: 0.15, out: 0.60 },
+  'o3': { in: 2.00, out: 8.00 },
+  'o4-mini': { in: 1.10, out: 4.40 },
+  'claude-sonnet-4': { in: 3.00, out: 15.00 },
+  'claude-haiku-4': { in: 1.00, out: 5.00 },
+  'claude-opus-4': { in: 15.00, out: 75.00 },
 }
 
 export const EMBEDDING_PRICE_PER_1M = 0.02
@@ -124,7 +126,7 @@ export const WORKSPACE_SAMPLES: Array<{
       {
         id: 'rag-agent',
         name: 'RAG Specialist',
-        model: 'claude-3-5-sonnet',
+        model: 'claude-sonnet-4',
         callsPerConversation: 2,
         inputTokensPerCall: 800,
         outputTokensPerCall: 300,
@@ -200,7 +202,7 @@ export const WORKSPACE_SAMPLES: Array<{
       {
         id: 'audience-orch',
         name: 'Audience Orchestrator',
-        model: 'gpt-5',
+        model: 'gpt-4.1',
         callsPerConversation: 1,
         inputTokensPerCall: 200,
         outputTokensPerCall: 1000,
@@ -218,7 +220,7 @@ export const WORKSPACE_SAMPLES: Array<{
       {
         id: 'audience-definition',
         name: 'Audience Definition Creator',
-        model: 'gpt-5',
+        model: 'gpt-4.1',
         callsPerConversation: 1,
         inputTokensPerCall: 200,
         outputTokensPerCall: 200,
@@ -236,7 +238,7 @@ export const WORKSPACE_SAMPLES: Array<{
       {
         id: 'audience-inspector',
         name: 'Audience Inspector',
-        model: 'gpt-5',
+        model: 'gpt-4.1',
         callsPerConversation: 1,
         inputTokensPerCall: 100,
         outputTokensPerCall: 1000,
@@ -254,7 +256,7 @@ export const WORKSPACE_SAMPLES: Array<{
       {
         id: 'audience-snapshot',
         name: 'Audience Snapshot',
-        model: 'gpt-5',
+        model: 'gpt-4.1',
         callsPerConversation: 1,
         inputTokensPerCall: 100,
         outputTokensPerCall: 1000,
@@ -272,7 +274,7 @@ export const WORKSPACE_SAMPLES: Array<{
       {
         id: 'audience-recommendation',
         name: 'Audience Recommendation',
-        model: 'gpt-5',
+        model: 'gpt-4.1',
         callsPerConversation: 1,
         inputTokensPerCall: 100,
         outputTokensPerCall: 1000,
@@ -290,7 +292,7 @@ export const WORKSPACE_SAMPLES: Array<{
       {
         id: 'audience-general',
         name: 'Audience General',
-        model: 'gpt-5',
+        model: 'gpt-4.1',
         callsPerConversation: 1,
         inputTokensPerCall: 100,
         outputTokensPerCall: 1000,

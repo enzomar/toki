@@ -163,6 +163,7 @@ export default function App() {
         const result = runAEIRForecast(agents, safeEdges, scaledConfig.conversationsPerMonth, pricing, { 
           numSimulations: mcSimCount,
           graphName: workspaceName,
+          useCache: false,
         })
         setMcReport(result)
       } catch (err) { 

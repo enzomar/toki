@@ -193,6 +193,10 @@ export type AEIRSimulationResult = {
   total_tokens: PercentileStats
   /** Total cost */
   total_cost: PercentileStats
+  /** Total input tokens */
+  total_input: PercentileStats
+  /** Total output tokens */
+  total_output: PercentileStats
   /** Breakdown by category */
   breakdown: {
     base_tokens: PercentileStats

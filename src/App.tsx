@@ -737,11 +737,11 @@ export default function App() {
                       {/* Input tokens row */}
                       <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>↓ Input</Typography></Grid>
                       <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block' }}>{formatMetricNumber(estimate.totalInputTokens)}</Typography></Grid>
-                      <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block', color: mcReport ? 'text.primary' : 'text.disabled' }}>{mcReport ? formatMetricNumber((mcReport.breakdown_base_tokens + mcReport.breakdown_rag_tokens + mcReport.breakdown_mcp_tokens) * scaledConfig.conversationsPerMonth) : '—'}</Typography></Grid>
+                      <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block', color: mcReport ? 'text.primary' : 'text.disabled' }}>{mcReport ? formatMetricNumber(mcReport.input_tokens_per_conv * scaledConfig.conversationsPerMonth) : '—'}</Typography></Grid>
                       {/* Output tokens row */}
                       <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>↑ Output</Typography></Grid>
                       <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block' }}>{formatMetricNumber(estimate.totalOutputTokens)}</Typography></Grid>
-                      <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block', color: mcReport ? 'text.primary' : 'text.disabled' }}>{mcReport ? formatMetricNumber((mcReport.tokens_expected_per_conv * scaledConfig.conversationsPerMonth) - ((mcReport.breakdown_base_tokens + mcReport.breakdown_rag_tokens + mcReport.breakdown_mcp_tokens) * scaledConfig.conversationsPerMonth)) : '—'}</Typography></Grid>
+                      <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block', color: mcReport ? 'text.primary' : 'text.disabled' }}>{mcReport ? formatMetricNumber(mcReport.output_tokens_per_conv * scaledConfig.conversationsPerMonth) : '—'}</Typography></Grid>
                       {/* Embedding tokens row */}
                       {(estimate.totalEmbeddingTokens > 0 || (mcReport && mcReport.breakdown_embedding_tokens > 0)) && (
                         <>

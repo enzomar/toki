@@ -344,6 +344,8 @@ function simulateSingleRun(
   const result: SimulationRun = {
     totalTokens: 0,
     totalCost: 0,
+    totalInput: 0,
+    totalOutput: 0,
     breakdown: { base: 0, rag: 0, mcp: 0, embedding: 0, reasoning: 0 },
     nodeTokens: new Map(),
     nodeCosts: new Map(),
@@ -377,6 +379,8 @@ function simulateSingleRun(
     const nodeTokens = execution.inputTokens + execution.outputTokens + execution.embeddingTokens
     result.totalTokens += nodeTokens
     result.totalCost += execution.cost
+    result.totalInput += execution.inputTokens
+    result.totalOutput += execution.outputTokens + execution.embeddingTokens
     result.nodeTokens.set(nodeId, nodeTokens)
     result.nodeCosts.set(nodeId, execution.cost)
     
@@ -428,9 +432,13 @@ export function runAEIRSimulation(
   // Aggregate
   const totalTokensSamples = runs.map(r => r.totalTokens).sort((a, b) => a - b)
   const totalCostSamples = runs.map(r => r.totalCost).sort((a, b) => a - b)
+  const totalInputSamples = runs.map(r => r.totalInput).sort((a, b) => a - b)
+  const totalOutputSamples = runs.map(r => r.totalOutput).sort((a, b) => a - b)
   
   const totalTokens = computePercentiles(totalTokensSamples)
   const totalCost = computePercentiles(totalCostSamples)
+  const totalInput = computePercentiles(totalInputSamples)
+  const totalOutput = computePercentiles(totalOutputSamples)
   
   const breakdownBase = computePercentiles(runs.map(r => r.breakdown.base).sort((a, b) => a - b))
   const breakdownRag = computePercentiles(runs.map(r => r.breakdown.rag).sort((a, b) => a - b))
@@ -459,6 +467,8 @@ export function runAEIRSimulation(
   return {
     total_tokens: totalTokens,
     total_cost: totalCost,
+    total_input: totalInput,
+    total_output: totalOutput,
     breakdown: {
       base_tokens: breakdownBase,
       rag_tokens: breakdownRag,
@@ -560,6 +570,9 @@ export function toExternalSchema(
     breakdown_rag_tokens: Math.round(simulation.breakdown.rag_tokens.expected),
     breakdown_mcp_tokens: Math.round(simulation.breakdown.mcp_tokens.expected),
     breakdown_embedding_tokens: Math.round(simulation.breakdown.embedding_tokens.expected),
+    
+    input_tokens_per_conv: Math.round(simulation.total_input.expected),
+    output_tokens_per_conv: Math.round(simulation.total_output.expected),
     
     cost_p50_monthly: costP50Monthly,
     cost_p90_monthly: costP90Monthly,

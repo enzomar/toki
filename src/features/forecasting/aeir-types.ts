@@ -235,6 +235,10 @@ export type ExternalForecastResult = {
   breakdown_mcp_tokens: number
   breakdown_embedding_tokens: number
   
+  /** Input/Output token split (per conversation) */
+  input_tokens_per_conv: number
+  output_tokens_per_conv: number
+  
   /** Cost forecasts (scaled to monthly) */
   cost_p50_monthly: number
   cost_p90_monthly: number

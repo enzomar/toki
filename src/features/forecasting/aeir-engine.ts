@@ -322,6 +322,8 @@ function sampleMCPToolCall(rng: () => number, ragNode: RAGNode): number {
 type SimulationRun = {
   totalTokens: number
   totalCost: number
+  totalInput: number
+  totalOutput: number
   breakdown: {
     base: number
     rag: number

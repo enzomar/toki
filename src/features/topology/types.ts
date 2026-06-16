@@ -93,6 +93,8 @@ export type EstimateSummary = {
   totalOutputTokens: number
   totalEmbeddingTokens: number
   costPerConversation: number
+  /** Total tokens consumed per single conversation across all agents */
+  tokensPerConversation: number
   /** Best case (with maximum caching, minimum traffic) */
   bestCaseCostPerMonth: number
   /** Worst case (no caching, maximum traffic, history growth) */

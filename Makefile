@@ -6,61 +6,84 @@ PREVIEW_PORT ?= 4173
 MESSAGE ?= chore: update toki
 GIT_BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
-.PHONY: help install dev build preview vercel-login vercel-link deploy-preview deploy-prod deploy push push-auto auto-push
+.PHONY: help install dev run build test preview push deploy-pages deploy-prod docker-build docker-run docker-push
 
 help:
-	@printf "Targets:\n"
-	@printf "  make install         Install dependencies\n"
-	@printf "  make dev             Start Vite in local dev mode\n"
-	@printf "  make build           Run the production build\n"
-	@printf "  make preview         Preview the production build locally\n"
-	@printf "  make vercel-login    Log in to Vercel CLI\n"
-	@printf "  make vercel-link     Link this folder to a Vercel project\n"
-	@printf "  make deploy-preview  Create a Vercel preview deployment\n"
-	@printf "  make deploy-prod     Create a Vercel production deployment\n"
-	@printf "  make push            Git add/commit/push current branch\n"
-	@printf "  make push-auto       Alias for make push with auto-commit\n"
+	@printf "\n  Toki — Token Cost Calculator\n\n"
+	@printf "  Development:\n"
+	@printf "    make install         Install dependencies\n"
+	@printf "    make dev             Start dev server (http://$(HOST):$(PORT))\n"
+	@printf "    make run             Alias for 'make dev'\n"
+	@printf "    make build           Production build\n"
+	@printf "    make test            Run unit tests\n"
+	@printf "    make preview         Preview production build (http://$(HOST):$(PREVIEW_PORT))\n"
+	@printf "\n  Deploy:\n"
+	@printf "    make deploy-pages    Build and push to gh-pages branch (GitHub Pages)\n"
+	@printf "    make deploy-prod     Deploy to Vercel (production)\n"
+	@printf "    make docker-build    Build Forge Docker image\n"
+	@printf "    make docker-run      Run Docker image locally (:8080)\n"
+	@printf "    make docker-push     Push image to Forge Artifactory\n"
+	@printf "\n  Git:\n"
+	@printf "    make push            Bump version, commit, push\n"
+	@printf "\n"
+
+# --- Development ---
 
 install:
 	npm install
 
 dev:
+	@test -d node_modules || npm install
 	npm run dev -- --host $(HOST) --port $(PORT)
+
+run: dev
 
 build:
 	npm run build
 
-preview:
+test:
+	npm test
+
+preview: build
 	npm run preview -- --host $(HOST) --port $(PREVIEW_PORT)
 
-vercel-login:
-	npx vercel login
+# --- Git ---
 
-vercel-link:
-	npx vercel link
+push:
+	@test -d .git || (echo "No git repo. Run 'git init' first."; exit 1)
+	@git remote get-url origin >/dev/null 2>&1 || (echo "Remote 'origin' missing."; exit 1)
+	@test -n "$(GIT_BRANCH)" || (echo "Cannot detect branch."; exit 1)
+	npm version minor --no-git-tag-version
+	git add -A
+	@if ! git diff --cached --quiet; then git commit -m "$(MESSAGE)"; else echo "Nothing to commit."; fi
+	git push origin $(GIT_BRANCH)
 
-deploy-preview:
-	npx vercel
+# --- GitHub Pages (no Actions needed) ---
+
+deploy-pages:
+	GITHUB_PAGES=true npm run build
+	@test -d dist || (echo "Build failed."; exit 1)
+	@echo "Deploying to gh-pages branch..."
+	@git stash --include-untracked -q 2>/dev/null || true
+	@git branch -D gh-pages 2>/dev/null || true
+	git checkout --orphan gh-pages
+	git rm -rf . > /dev/null 2>&1 || true
+	cp -r dist/* .
+	cp dist/index.html 404.html
+	git add -A
+	git commit -m "deploy: github pages"
+	git push origin gh-pages --force
+	git checkout $(GIT_BRANCH)
+	@git stash pop -q 2>/dev/null || true
+	@echo ""
+	@echo "✓ Deployed. Set Pages source to 'gh-pages' branch (root) in repo Settings → Pages."
+
+# --- Vercel ---
 
 deploy-prod: build
 	npx vercel --prod
 
-deploy: deploy-prod
-
-push:
-	@test -d .git || (echo "No git repository initialized in this folder. Run 'git init' and add a remote first."; exit 1)
-	@git remote get-url origin >/dev/null 2>&1 || (echo "Remote 'origin' is missing. Add it before using 'make push'."; exit 1)
-	@test -n "$(GIT_BRANCH)" || (echo "Could not detect the current git branch."; exit 1)
-	npm version minor --no-git-tag-version
-	git add -A
-	@if ! git diff --cached --quiet; then git commit -m "$(MESSAGE)"; else echo "No staged changes to commit."; fi
-	git push origin $(GIT_BRANCH)
-
-push-auto: push
-
-auto-push: push-auto
-
-# --- Forge (Amadeus) deployment ---
+# --- Forge (Docker) ---
 
 FORGE_REGISTRY ?= docker-prod-toki-nce.dockerhub.rnd.amadeus.net
 FORGE_IMAGE ?= toki
@@ -76,9 +99,3 @@ docker-run:
 docker-push: docker-build
 	docker push $(FORGE_REGISTRY)/$(FORGE_IMAGE):$(FORGE_TAG)
 	docker push $(FORGE_REGISTRY)/$(FORGE_IMAGE):latest
-
-# --- GitHub Pages (manual deploy) ---
-
-deploy-pages:
-	GITHUB_PAGES=true npm run build
-	@echo "dist/ is ready. Push to main to trigger GitHub Actions, or use 'gh-pages' manually."

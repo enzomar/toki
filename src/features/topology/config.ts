@@ -102,7 +102,7 @@ export const WORKSPACE_SAMPLES: Array<{
   {
     id: 'orchestrated-rag',
     label: 'Orchestrated RAG stack',
-    description: 'An orchestrator routes to a RAG specialist and a response composer. Typical enterprise Q&A pattern.',
+    description: 'Orchestrator routes to RAG specialist and response composer. Compiled to AEIR: Router→RAG→Agent nodes.',
     conversationsPerMonth: 50000,
     agents: [
       {
@@ -169,7 +169,7 @@ export const WORKSPACE_SAMPLES: Array<{
   {
     id: 'tool-calling',
     label: 'Tool-calling assistant',
-    description: 'A single agent that uses MCP tools to fetch data and perform actions before responding.',
+    description: 'Single agent with MCP tool integration. Compiled to AEIR: ToolNode with chain/retry probabilities.',
     conversationsPerMonth: 20000,
     agents: [
       {
@@ -196,7 +196,7 @@ export const WORKSPACE_SAMPLES: Array<{
   {
     id: 'audience-orchestrator',
     label: 'Audience Orchestrator',
-    description: 'An orchestrator routes to 5 specialized audience agents (Definition Creator, Inspector, Snapshot, Recommendation, General) with varying MCP call patterns and traffic weights.',
+    description: 'Complex multi-agent system with probabilistic routing. Compiled to AEIR: Router→5 specialized ToolNodes with weighted edges.',
     conversationsPerMonth: 35000,
     agents: [
       {

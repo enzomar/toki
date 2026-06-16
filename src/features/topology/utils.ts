@@ -246,6 +246,7 @@ export function calculateEstimate(
   const totalOutputTokens = agentBreakdowns.reduce((sum, a) => sum + a.outputTokensPerMonth, 0)
   const totalEmbeddingTokens = agentBreakdowns.reduce((sum, a) => sum + a.embeddingTokensPerMonth, 0)
   const costPerConversation = config.conversationsPerMonth > 0 ? totalCostPerMonth / config.conversationsPerMonth : 0
+  const tokensPerConversation = config.conversationsPerMonth > 0 ? totalTokensPerMonth / config.conversationsPerMonth : 0
 
   // Best case: assume 50% prompt caching on all agents
   const bestCaseCostPerMonth = totalCostPerMonth * 0.7
@@ -263,6 +264,7 @@ export function calculateEstimate(
     totalOutputTokens,
     totalEmbeddingTokens,
     costPerConversation,
+    tokensPerConversation,
     bestCaseCostPerMonth,
     worstCaseCostPerMonth,
     confidence,

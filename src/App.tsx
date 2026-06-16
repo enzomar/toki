@@ -1,4 +1,4 @@
-import { ChangeEvent, useMemo, useRef, useState } from 'react'
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -19,6 +19,7 @@ import {
   MenuItem,
   Paper,
   Select,
+  Slider,
   Snackbar,
   Stack,
   Switch,
@@ -123,22 +124,66 @@ export default function App() {
   const [samplesAnchor, setSamplesAnchor] = useState<HTMLElement | null>(null)
   const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null)
   const [newModelName, setNewModelName] = useState('')
+  const [growthMultiplier, setGrowthMultiplier] = useState(1)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Derived
+  // Derived — apply growth multiplier to estimate config
+  const scaledConfig = useMemo((): EstimateConfig => ({
+    ...estimateConfig,
+    conversationsPerMonth: Math.round(estimateConfig.conversationsPerMonth * growthMultiplier),
+  }), [estimateConfig, growthMultiplier])
   const safeEdges = useMemo(() => sanitizeEdges(agents, edges), [agents, edges])
   const entryAgents = useMemo(() => inferEntryAgents(agents, safeEdges), [agents, safeEdges])
-  const estimate = useMemo(() => calculateEstimate(agents, estimateConfig, pricing, safeEdges), [agents, estimateConfig, pricing, safeEdges])
+  const estimate = useMemo(() => calculateEstimate(agents, scaledConfig, pricing, safeEdges), [agents, scaledConfig, pricing, safeEdges])
   const formatCost = (v: number) => formatCurrency(v, 'EUR')
   const modelOptions = useMemo(() => {
     const allKeys = new Set([...MODEL_OPTIONS.map((o) => o.value), ...Object.keys(pricing.models)])
     return Array.from(allKeys).map((key) => ({ value: key, label: getModelLabel(key) }))
   }, [pricing.models])
+  // Connection weight validation
+  const totalOutgoingTraffic = useMemo(() => {
+    const outByAgent = new Map<string, number>()
+    safeEdges.forEach((e) => {
+      outByAgent.set(e.sourceId, (outByAgent.get(e.sourceId) ?? 0) + e.weight)
+    })
+    return outByAgent
+  }, [safeEdges])
+  // AEIR simulation result (async, runs in background)
+  const [mcReport, setMcReport] = useState<import('./features/forecasting/aeir').ExternalForecastResult | null>(null)
+  const [mcRunning, setMcRunning] = useState(false)
+  const [mcSimCount, setMcSimCount] = useLocalStorage<number>('v2:mcSims', 200)
+
+  // Trigger AEIR forecast when inputs change (debounced 300ms)
+  useEffect(() => {
+    if (agents.length === 0 || scaledConfig.conversationsPerMonth === 0) { setMcReport(null); return }
+    const timer = setTimeout(async () => {
+      setMcRunning(true)
+      try {
+        const { runAEIRForecast } = await import('./features/forecasting/aeir')
+        const result = runAEIRForecast(agents, safeEdges, scaledConfig.conversationsPerMonth, pricing, { 
+          numSimulations: mcSimCount,
+          graphName: workspaceName,
+        })
+        setMcReport(result)
+      } catch (err) { 
+        console.error('AEIR forecast error:', err)
+        setMcReport(null) 
+      }
+      finally { setMcRunning(false) }
+    }, 300)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents, safeEdges, scaledConfig.conversationsPerMonth, pricing, mcSimCount, workspaceName])
 
   // --- Actions ---
 
   const addAgent = () => {
     setAgents((cur) => [...cur, createDefaultAgent(cur.length)])
+  }
+
+  const bulkChangeModel = (newModel: string) => {
+    setAgents((cur) => cur.map((a) => ({ ...a, model: newModel })))
+    setSnackbar({ severity: 'success', message: `All agents switched to ${getModelLabel(newModel)}` })
   }
 
   const removeAgent = (id: string) => {
@@ -539,11 +584,28 @@ export default function App() {
                       <Typography variant="h6">Agents</Typography>
                       <Typography variant="body2" color="text.secondary">Each agent is a cost line item. Add the LLM agents in your system.</Typography>
                     </Box>
-                    <Button startIcon={<AddRounded />} variant="contained" onClick={addAgent}>Add agent</Button>
+                    <Stack direction="row" spacing={1}>
+                      {agents.length > 1 && (
+                        <FormControl size="small" sx={{ minWidth: 130 }}>
+                          <InputLabel>Bulk model</InputLabel>
+                          <Select label="Bulk model" value="" onChange={(e) => { if (e.target.value) bulkChangeModel(String(e.target.value)) }}>
+                            {modelOptions.map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+                          </Select>
+                        </FormControl>
+                      )}
+                      <Button startIcon={<AddRounded />} variant="contained" onClick={addAgent}>Add agent</Button>
+                    </Stack>
                   </Stack>
 
                   {agents.length === 0 ? (
-                    <Alert severity="info">No agents yet. Add your first agent to start estimating costs.</Alert>
+                    <Paper variant="outlined" sx={{ p: 3, textAlign: 'center', borderStyle: 'dashed' }}>
+                      <Typography variant="h6" sx={{ mb: 1 }}>Get started</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Load a sample architecture to explore, or add your first agent manually.</Typography>
+                      <Stack direction="row" spacing={1.5} sx={{ justifyContent: 'center' }}>
+                        <Button variant="contained" startIcon={<ScienceRounded />} onClick={(e) => setSamplesAnchor(e.currentTarget)}>Load a sample</Button>
+                        <Button variant="outlined" startIcon={<AddRounded />} onClick={addAgent}>Add agent</Button>
+                      </Stack>
+                    </Paper>
                   ) : (
                     <Stack spacing={2}>
                       {agents.map((agent) => (
@@ -601,6 +663,19 @@ export default function App() {
                       ))}
                     </Stack>
                   )}
+                  {/* Connection weight validation */}
+                  {safeEdges.length > 0 && (() => {
+                    const notes: string[] = []
+                    totalOutgoingTraffic.forEach((total, agentId) => {
+                      const name = agents.find((a) => a.id === agentId)?.name ?? agentId
+                      notes.push(`${name}: ${Math.round(total * 100)}% outgoing`)
+                    })
+                    return notes.length > 0 ? (
+                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                        Traffic summary: {notes.join(' · ')}
+                      </Typography>
+                    ) : null
+                  })()}
                 </Paper>
                 )}
               </Stack>
@@ -619,54 +694,193 @@ export default function App() {
                 </Stack>
 
                 <Stack spacing={2}>
-                  {/* Primary metrics: EUR + Tokens */}
+                  {/* Primary metrics: Deterministic vs Monte Carlo side-by-side */}
                   <Grid container spacing={1.5}>
                     <Grid size={6}>
-                      <Box sx={{ textAlign: 'center', py: 2, bgcolor: 'rgba(15, 118, 110, 0.04)', borderRadius: 2 }}>
-                        <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>Monthly cost</Typography>
-                        <Typography variant="h5" sx={{ fontWeight: 800, color: 'primary.main' }}>
+                      <Box sx={{ textAlign: 'center', py: 1.5, bgcolor: 'rgba(19, 34, 56, 0.03)', borderRadius: 2, border: '1px solid rgba(19,34,56,0.06)' }}>
+                        <Typography variant="overline" color="text.secondary" sx={{ fontSize: 9 }}>Deterministic</Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 800, color: 'text.primary' }}>
                           {formatCost(estimate.totalCostPerMonth)}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>
                           {formatCost(estimate.costPerConversation)}/conv
                         </Typography>
                       </Box>
                     </Grid>
                     <Grid size={6}>
-                      <Box sx={{ textAlign: 'center', py: 2, bgcolor: 'rgba(19, 34, 56, 0.03)', borderRadius: 2 }}>
-                        <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>Monthly tokens</Typography>
-                        <Typography variant="h5" sx={{ fontWeight: 800, color: 'text.primary' }}>
-                          {formatMetricNumber(estimate.totalTokensPerMonth)}
+                      <Box sx={{ textAlign: 'center', py: 1.5, bgcolor: mcReport ? 'rgba(15, 118, 110, 0.06)' : 'rgba(19, 34, 56, 0.02)', borderRadius: 2, border: '1px solid', borderColor: mcReport ? 'rgba(15,118,110,0.2)' : 'rgba(19,34,56,0.06)' }}>
+                        <Typography variant="overline" color="text.secondary" sx={{ fontSize: 9 }}>
+                          Monte Carlo{mcRunning ? ' …' : ''}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {formatMetricNumber(estimate.totalInputTokens)} in / {formatMetricNumber(estimate.totalOutputTokens)} out
+                        <Typography variant="h6" sx={{ fontWeight: 800, color: mcReport ? 'primary.main' : 'text.disabled' }}>
+                          {mcReport ? formatCost(mcReport.cost_expected_monthly) : '—'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>
+                          {mcReport ? `${formatCost(mcReport.cost_expected_monthly / scaledConfig.conversationsPerMonth)}/conv` : 'awaiting simulation'}
                         </Typography>
                       </Box>
                     </Grid>
                   </Grid>
+
+                  {/* Token detail: IN / OUT for both modes */}
+                  <Box sx={{ px: 1, py: 1, bgcolor: 'rgba(19,34,56,0.02)', borderRadius: 1.5, border: '1px solid rgba(19,34,56,0.04)' }}>
+                    <Grid container spacing={0.5}>
+                      {/* Header */}
+                      <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9, fontWeight: 600 }}>&nbsp;</Typography></Grid>
+                      <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9, fontWeight: 600, textAlign: 'center', display: 'block' }}>Deterministic</Typography></Grid>
+                      <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9, fontWeight: 600, textAlign: 'center', display: 'block' }}>Monte Carlo</Typography></Grid>
+                      {/* Tokens/mo row */}
+                      <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>Tokens/mo</Typography></Grid>
+                      <Grid size={4}><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 11, textAlign: 'center', display: 'block' }}>{formatMetricNumber(estimate.totalTokensPerMonth)}</Typography></Grid>
+                      <Grid size={4}><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 11, textAlign: 'center', display: 'block', color: mcReport ? 'text.primary' : 'text.disabled' }}>{mcReport ? formatMetricNumber(mcReport.tokens_expected_per_conv * scaledConfig.conversationsPerMonth) : '—'}</Typography></Grid>
+                      {/* Input tokens row */}
+                      <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>↓ Input</Typography></Grid>
+                      <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block' }}>{formatMetricNumber(estimate.totalInputTokens)}</Typography></Grid>
+                      <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block', color: mcReport ? 'text.primary' : 'text.disabled' }}>{mcReport ? formatMetricNumber(mcReport.breakdown_base_tokens + mcReport.breakdown_rag_tokens + mcReport.breakdown_mcp_tokens) : '—'}</Typography></Grid>
+                      {/* Output tokens row */}
+                      <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>↑ Output</Typography></Grid>
+                      <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block' }}>{formatMetricNumber(estimate.totalOutputTokens)}</Typography></Grid>
+                      <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block', color: mcReport ? 'text.primary' : 'text.disabled' }}>{mcReport ? formatMetricNumber((mcReport.tokens_expected_per_conv * scaledConfig.conversationsPerMonth) - (mcReport.breakdown_base_tokens + mcReport.breakdown_rag_tokens + mcReport.breakdown_mcp_tokens)) : '—'}</Typography></Grid>
+                      {/* Embedding tokens row */}
+                      {(estimate.totalEmbeddingTokens > 0 || (mcReport && mcReport.breakdown_embedding_tokens > 0)) && (
+                        <>
+                          <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>⟡ Embedding</Typography></Grid>
+                          <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block' }}>{formatMetricNumber(estimate.totalEmbeddingTokens)}</Typography></Grid>
+                          <Grid size={4}><Typography variant="caption" sx={{ fontSize: 10, textAlign: 'center', display: 'block', color: mcReport ? 'text.primary' : 'text.disabled' }}>{mcReport ? formatMetricNumber(mcReport.breakdown_embedding_tokens) : '—'}</Typography></Grid>
+                        </>
+                      )}
+                      {/* Alignment indicator */}
+                      {mcReport && (
+                        <>
+                          <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>Alignment</Typography></Grid>
+                          <Grid size={8}>
+                            <Typography variant="caption" sx={{ fontSize: 10, color: mcReport.alignment_ok ? 'success.main' : 'warning.main' }}>
+                              {mcReport.alignment_ok ? `✓ ×${mcReport.alignment_ratio.toFixed(2)} (within ±15%)` : `⚠ ×${mcReport.alignment_ratio.toFixed(2)} — models diverge`}
+                            </Typography>
+                          </Grid>
+                        </>
+                      )}
+                    </Grid>
+                  </Box>
 
                   {/* Traffic volume summary */}
                   {estimateConfig.conversationsPerMonth > 0 && (
                     <Box sx={{ px: 1.5, py: 1, bgcolor: 'rgba(19,34,56,0.02)', borderRadius: 1.5, border: '1px solid rgba(19,34,56,0.06)' }}>
                       <Stack direction="row" sx={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
                         <Typography variant="caption" color="text.secondary">{estimateConfig.users.toLocaleString()} users × {estimateConfig.conversationsPerUser} conv/{estimateConfig.timeRange}</Typography>
-                        <Typography variant="caption" sx={{ fontWeight: 700 }}>{estimateConfig.conversationsPerMonth.toLocaleString()} conv/mo</Typography>
+                        <Typography variant="caption" sx={{ fontWeight: 700 }}>{scaledConfig.conversationsPerMonth.toLocaleString()} conv/mo{growthMultiplier > 1 ? ` (×${growthMultiplier})` : ''}</Typography>
                       </Stack>
+                      {estimate.tokensPerConversation > 0 && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                          ≈ {formatMetricNumber(estimate.tokensPerConversation)} tokens/conversation
+                        </Typography>
+                      )}
                     </Box>
                   )}
 
-                  {/* Best / Worst case range */}
-                  {estimate.totalCostPerMonth > 0 && (
-                    <Stack direction="row" spacing={1} sx={{ justifyContent: 'center' }}>
-                      <Chip size="small" label={`Best: ${formatCost(estimate.bestCaseCostPerMonth)}`} color="success" variant="outlined" />
-                      <Chip size="small" label={`Worst: ${formatCost(estimate.worstCaseCostPerMonth)}`} color="warning" variant="outlined" />
-                    </Stack>
+                  {/* Growth multiplier */}
+                  {estimateConfig.conversationsPerMonth > 0 && (
+                    <Box sx={{ px: 1.5 }}>
+                      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="caption" color="text.secondary">Growth scenario</Typography>
+                        <Typography variant="caption" sx={{ fontWeight: 700 }}>{growthMultiplier}×</Typography>
+                      </Stack>
+                      <Slider size="small" value={growthMultiplier} min={1} max={5} step={0.5} marks={[{ value: 1, label: '1×' }, { value: 2, label: '2×' }, { value: 3, label: '3×' }, { value: 5, label: '5×' }]} onChange={(_, v) => setGrowthMultiplier(v as number)} sx={{ mt: 0, '& .MuiSlider-markLabel': { fontSize: 10 } }} />
+                    </Box>
                   )}
 
-                  {/* Confidence indicator */}
+                  {/* Monte Carlo percentile range — AEIR engine */}
+                  {(estimate.totalCostPerMonth > 0 || (mcReport && mcReport.cost_expected_monthly > 0)) && (
+                    <Box sx={{ p: 1.5, bgcolor: 'rgba(19,34,56,0.02)', borderRadius: 1.5, border: '1px solid rgba(19,34,56,0.06)' }}>
+                      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 700 }}>
+                          AEIR simulation{mcRunning ? ' · running…' : mcReport ? ` (${mcReport.simulation_count} runs)` : ''}
+                        </Typography>
+                        <FormControl size="small" sx={{ minWidth: 80 }}>
+                          <Select value={mcSimCount} onChange={(e) => setMcSimCount(Number(e.target.value))} sx={{ fontSize: 11, height: 22 }}>
+                            <MenuItem value={50}>50</MenuItem>
+                            <MenuItem value={100}>100</MenuItem>
+                            <MenuItem value={200}>200</MenuItem>
+                            <MenuItem value={500}>500</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Stack>
+                      {mcReport ? (
+                        <>
+                          {/* Percentile table: tokens and cost in same grid */}
+                          <Box sx={{ mb: 0.75 }}>
+                            <Grid container spacing={0.5}>
+                              <Grid size={3}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9 }}>&nbsp;</Typography></Grid>
+                              <Grid size={3}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9, fontWeight: 600 }}>p50</Typography></Grid>
+                              <Grid size={3}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9, fontWeight: 600 }}>p90</Typography></Grid>
+                              <Grid size={3}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9, fontWeight: 600 }}>p99</Typography></Grid>
+                            </Grid>
+                            <Grid container spacing={0.5}>
+                              <Grid size={3}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>Tokens</Typography></Grid>
+                              <Grid size={3}><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 11 }}>{formatMetricNumber(mcReport.tokens_p50_per_conv)}</Typography></Grid>
+                              <Grid size={3}><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 11 }}>{formatMetricNumber(mcReport.tokens_p90_per_conv)}</Typography></Grid>
+                              <Grid size={3}><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 11, color: 'warning.dark' }}>{formatMetricNumber(mcReport.tokens_p99_per_conv)}</Typography></Grid>
+                            </Grid>
+                            <Grid container spacing={0.5}>
+                              <Grid size={3}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>Cost/mo</Typography></Grid>
+                              <Grid size={3}><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 11 }}>{formatCost(mcReport.cost_p50_monthly)}</Typography></Grid>
+                              <Grid size={3}><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 11 }}>{formatCost(mcReport.cost_p90_monthly)}</Typography></Grid>
+                              <Grid size={3}><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 11, color: 'warning.dark' }}>{formatCost(mcReport.cost_p99_monthly)}</Typography></Grid>
+                            </Grid>
+                          </Box>
+                          
+                          {/* Breakdown */}
+                          <Divider sx={{ my: 0.75 }} />
+                          <Grid container spacing={0.5} sx={{ mb: 0.5 }}>
+                            <Grid size={3}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9 }}>Base</Typography><Typography variant="caption" sx={{ fontWeight: 600, fontSize: 10, display: 'block' }}>{formatMetricNumber(mcReport.breakdown_base_tokens)}</Typography></Grid>
+                            <Grid size={3}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9 }}>RAG</Typography><Typography variant="caption" sx={{ fontWeight: 600, fontSize: 10, display: 'block' }}>{formatMetricNumber(mcReport.breakdown_rag_tokens)}</Typography></Grid>
+                            <Grid size={3}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9 }}>MCP</Typography><Typography variant="caption" sx={{ fontWeight: 600, fontSize: 10, display: 'block' }}>{formatMetricNumber(mcReport.breakdown_mcp_tokens)}</Typography></Grid>
+                            <Grid size={3}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9 }}>Embed</Typography><Typography variant="caption" sx={{ fontWeight: 600, fontSize: 10, display: 'block' }}>{formatMetricNumber(mcReport.breakdown_embedding_tokens)}</Typography></Grid>
+                          </Grid>
+                          
+                          {/* Dominant cost nodes */}
+                          {mcReport.dominant_nodes && mcReport.dominant_nodes.length > 0 && (
+                            <>
+                              <Divider sx={{ my: 0.75 }} />
+                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: 9, fontWeight: 600, display: 'block', mb: 0.25 }}>Top cost contributors</Typography>
+                              {mcReport.dominant_nodes.slice(0, 3).map((dn) => (
+                                <Stack key={dn.node_id} direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>
+                                    {dn.label} {dn.is_cost_spike ? '⚡' : ''}
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ fontWeight: 600, fontSize: 10 }}>
+                                    {Math.round(dn.cost_fraction * 100)}%
+                                  </Typography>
+                                </Stack>
+                              ))}
+                            </>
+                          )}
+                          
+                          {/* Metadata row */}
+                          <Divider sx={{ my: 0.75 }} />
+                          <Grid container spacing={0.5}>
+                            <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9 }}>Tail risk</Typography><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 10, color: mcReport.tail_risk_factor > 2 ? 'error.main' : 'text.primary', display: 'block' }}>{mcReport.tail_risk_factor.toFixed(2)}×</Typography></Grid>
+                            <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9 }}>Confidence</Typography><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 10, display: 'block' }}>{Math.round(mcReport.confidence_score * 100)}%</Typography></Grid>
+                            <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9 }}>Compile</Typography><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 10, display: 'block' }}>{mcReport.compilation_time_ms.toFixed(1)}ms</Typography></Grid>
+                          </Grid>
+                        </>
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">
+                          {agents.length === 0 ? 'Add agents to run simulation' : 'Set traffic volume to simulate'}
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
+
+                  {/* Confidence indicator — enhanced with MC variance */}
                   <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: estimate.confidence === 'high' ? 'rgba(47,133,90,0.06)' : estimate.confidence === 'medium' ? 'rgba(217,119,6,0.06)' : 'rgba(220,38,38,0.06)', border: '1px solid', borderColor: estimate.confidence === 'high' ? 'rgba(47,133,90,0.2)' : estimate.confidence === 'medium' ? 'rgba(217,119,6,0.2)' : 'rgba(220,38,38,0.2)' }}>
                     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
                       <Chip size="small" label={estimate.confidence === 'high' ? 'High confidence' : estimate.confidence === 'medium' ? 'Medium confidence' : 'Low confidence'} color={estimate.confidence === 'high' ? 'success' : estimate.confidence === 'medium' ? 'warning' : 'error'} />
+                      {mcReport && (
+                        <Typography variant="caption" color="text.secondary">
+                          MC: {Math.round(mcReport.confidence_score * 100)}%
+                        </Typography>
+                      )}
                     </Stack>
                     <Stack spacing={0.25}>
                       {estimate.confidenceReasons.map((reason, i) => (

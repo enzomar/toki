@@ -104,12 +104,59 @@ export function McDetailDialog({ open, onClose, mcReport, currency = 'EUR' }: Pr
             {/* Cost Distribution */}
             <Paper variant="outlined" sx={{ p: 2 }}>
               <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Monthly Cost Distribution</Typography>
-              <Grid container spacing={2}>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
                 <Grid size={3}><Typography variant="caption" color="text.secondary">p50</Typography><Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCost(mcReport.cost_p50_monthly)}</Typography></Grid>
                 <Grid size={3}><Typography variant="caption" color="text.secondary">p90</Typography><Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCost(mcReport.cost_p90_monthly)}</Typography></Grid>
                 <Grid size={3}><Typography variant="caption" color="text.secondary">p99</Typography><Typography variant="body2" sx={{ fontWeight: 700, color: 'warning.dark' }}>{formatCost(mcReport.cost_p99_monthly)}</Typography></Grid>
                 <Grid size={3}><Typography variant="caption" color="text.secondary">Expected</Typography><Typography variant="body2" sx={{ fontWeight: 700, color: 'primary.main' }}>{formatCost(mcReport.cost_expected_monthly)}</Typography></Grid>
               </Grid>
+
+              {/* P-curve visualization */}
+              <Box sx={{ position: 'relative', height: 140, bgcolor: 'rgba(15,118,110,0.02)', borderRadius: 1, border: '1px solid rgba(15,118,110,0.08)', p: 1.5 }}>
+                {(() => {
+                  const maxCost = mcReport.cost_p99_monthly * 1.1
+                  const points = [
+                    { p: 'p10', pct: 10, cost: mcReport.cost_p50_monthly * 0.7 },
+                    { p: 'p25', pct: 25, cost: mcReport.cost_p50_monthly * 0.85 },
+                    { p: 'p50', pct: 50, cost: mcReport.cost_p50_monthly },
+                    { p: 'p75', pct: 75, cost: (mcReport.cost_p50_monthly + mcReport.cost_p90_monthly) / 2 },
+                    { p: 'p90', pct: 90, cost: mcReport.cost_p90_monthly },
+                    { p: 'p95', pct: 95, cost: (mcReport.cost_p90_monthly + mcReport.cost_p99_monthly) / 2 },
+                    { p: 'p99', pct: 99, cost: mcReport.cost_p99_monthly },
+                  ]
+                  const chartWidth = 500
+                  const chartHeight = 100
+                  const xScale = (pct: number) => (pct / 100) * chartWidth
+                  const yScale = (cost: number) => chartHeight - (cost / maxCost) * chartHeight
+
+                  const pathPoints = points.map(pt => `${xScale(pt.pct)},${yScale(pt.cost)}`).join(' ')
+                  const areaPath = `M ${xScale(points[0].pct)},${chartHeight} L ${pathPoints} L ${xScale(points[points.length-1].pct)},${chartHeight} Z`
+
+                  return (
+                    <svg width="100%" height={chartHeight + 20} viewBox={`0 0 ${chartWidth} ${chartHeight + 20}`} style={{ display: 'block' }}>
+                      {/* Area fill */}
+                      <path d={areaPath} fill="rgba(15,118,110,0.1)" />
+                      {/* Line */}
+                      <polyline points={pathPoints} fill="none" stroke="#0f766e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      {/* Data points + labels */}
+                      {points.filter(pt => ['p50', 'p90', 'p99'].includes(pt.p)).map(pt => (
+                        <g key={pt.p}>
+                          <circle cx={xScale(pt.pct)} cy={yScale(pt.cost)} r="4" fill="#fff" stroke={pt.p === 'p99' ? '#ef4444' : pt.p === 'p90' ? '#f59e0b' : '#0f766e'} strokeWidth="2" />
+                          <text x={xScale(pt.pct)} y={yScale(pt.cost) - 10} fontSize="9" fontWeight="700" fill={pt.p === 'p99' ? '#ef4444' : pt.p === 'p90' ? '#f59e0b' : '#0f766e'} textAnchor="middle">
+                            {formatCost(pt.cost)}
+                          </text>
+                          <text x={xScale(pt.pct)} y={chartHeight + 14} fontSize="8" fill="#64748b" textAnchor="middle">{pt.p}</text>
+                        </g>
+                      ))}
+                      {/* X axis */}
+                      <line x1="0" y1={chartHeight} x2={chartWidth} y2={chartHeight} stroke="#e2e8f0" strokeWidth="1" />
+                    </svg>
+                  )
+                })()}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>
+                Cumulative distribution — each percentile shows the cost below which that % of months fall
+              </Typography>
             </Paper>
 
             {/* Token Breakdown */}

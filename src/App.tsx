@@ -66,6 +66,7 @@ import { AgentEditDialog } from './components/AgentEditDialog'
 import { ExportActions } from './components/ExportActions'
 import { McDetailDialog } from './components/McDetailDialog'
 import { EstimateSidebar } from './components/EstimateSidebar'
+import { DESTab } from './components/DESTab'
 import { PricingTab } from './components/PricingTab'
 import { CalculatorPanel } from './components/CalculatorPanel'
 import { compileToAEIR } from './features/forecasting/aeir'
@@ -110,7 +111,7 @@ export default function App() {
   })
 
   // UI state
-  const [activeTab, setActiveTab] = useState<'calculator' | 'topology' | 'pricing' | 'token-tool' | 'help'>('calculator')
+  const [activeTab, setActiveTab] = useState<'calculator' | 'topology' | 'des' | 'pricing' | 'token-tool' | 'help'>('calculator')
   const [topoSelectedId, setTopoSelectedId] = useState<string | null>(null)
   const [topoEditDialogId, setTopoEditDialogId] = useState<string | null>(null)
   const [snackbar, setSnackbar] = useState<{ severity: 'success' | 'error' | 'info'; message: string } | null>(null)
@@ -302,6 +303,7 @@ export default function App() {
           <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)} variant={isPhone ? 'scrollable' : 'standard'} scrollButtons="auto" sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0, px: { xs: 1.5, sm: 2 }, fontSize: { xs: 12, sm: 13 } } }}>
             <Tab label="Calculator" value="calculator" />
             <Tab label="Topology" value="topology" />
+            <Tab label="DES" value="des" />
             <Tab disabled icon={<Divider orientation="vertical" sx={{ height: 20 }} />} sx={{ minWidth: 8, px: 0, opacity: '1 !important' }} value="" />
             <Tab label="Pricing" value="pricing" />
             <Tab label="Token Tool" value="token-tool" />
@@ -375,7 +377,7 @@ export default function App() {
                 <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
                   <Box>
                     <Typography variant="h6">System topology</Typography>
-                    <Typography variant="body2" color="text.secondary">Click a node to inspect. Double-click to edit parameters.</Typography>
+                    <Typography variant="body2" color="text.secondary">Visualize the topology. </Typography>
                   </Box>
                   {topoSelectedId && (
                     <Button size="small" variant="outlined" onClick={() => setTopoSelectedId(null)}>Clear selection</Button>
@@ -393,6 +395,21 @@ export default function App() {
                   aeirGraph={aeirGraph}
                 />
               </Paper>
+
+              {/* AEIR JSON View */}
+              {aeirGraph && (
+                <Paper sx={{ p: 2.5, mt: 2 }}>
+                  <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                    <Typography variant="h6">AEIR Graph (JSON)</Typography>
+                    <Button size="small" variant="outlined" onClick={() => { navigator.clipboard.writeText(JSON.stringify(aeirGraph, null, 2)); setSnackbar({ severity: 'success', message: 'AEIR JSON copied.' }) }}>Copy JSON</Button>
+                  </Stack>
+                  <Box sx={{ maxHeight: 400, overflowY: 'auto', bgcolor: '#0f172a', borderRadius: 2, p: 2 }}>
+                    <pre style={{ margin: 0, fontSize: 11, lineHeight: 1.5, color: '#e2e8f0', fontFamily: 'JetBrains Mono, Fira Code, monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      {JSON.stringify(aeirGraph, null, 2)}
+                    </pre>
+                  </Box>
+                </Paper>
+              )}
             </Grid>
             {topoSelectedId && (() => {
               const selectedAgent = agents.find((a) => a.id === topoSelectedId)
@@ -516,6 +533,9 @@ export default function App() {
               )
             })()}
           </Grid>
+        ) : activeTab === 'des' ? (
+          /* DES Simulator tab */
+          <DESTab agents={agents} edges={safeEdges} pricing={pricing} />
         ) : activeTab === 'token-tool' ? (
           /* Token Tool tab — inline version */
           <TokenToolTab />

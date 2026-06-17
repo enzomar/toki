@@ -7,6 +7,12 @@
  */
 
 export type AEIRSimConfig = {
+  // --- Traffic variance ---
+  /** CV for user count variance (default 0 = no variance, deterministic user count) */
+  users_cv: number
+  /** CV for conversations-per-user variance (default 0 = no variance) */
+  conversations_cv: number
+
   // --- Token variance ---
   /** Coefficient of variation for token distributions (default 0.15 = 15%) */
   token_cv: number
@@ -41,6 +47,8 @@ export type AEIRSimConfig = {
 }
 
 export const DEFAULT_AEIR_SIM_CONFIG: AEIRSimConfig = {
+  users_cv: 0,
+  conversations_cv: 0,
   token_cv: 0.15,
   calls_cv: 0.10,
   rag_chunk_count_cv: 0.20,
@@ -57,6 +65,8 @@ export const DEFAULT_AEIR_SIM_CONFIG: AEIRSimConfig = {
 
 /** Field metadata for UI rendering */
 export const AEIR_SIM_CONFIG_META: Record<keyof AEIRSimConfig, { label: string; help: string; min: number; max: number; step: number }> = {
+  users_cv: { label: 'User count variance', help: 'Coefficient of variation for monthly active users. 0 = fixed user count (deterministic). 0.20 = ±20% variance in user volume month-to-month.', min: 0, max: 0.50, step: 0.05 },
+  conversations_cv: { label: 'Conversations/user variance', help: 'Coefficient of variation for conversations per user. 0 = fixed rate. 0.30 = some users talk much more than others.', min: 0, max: 0.50, step: 0.05 },
   token_cv: { label: 'Token variance (CV)', help: 'Coefficient of variation applied to input/output token sampling. Higher = more spread in p90/p99.', min: 0.01, max: 0.50, step: 0.01 },
   calls_cv: { label: 'Calls variance (CV)', help: 'Variance on the number of LLM calls per execution.', min: 0.01, max: 0.50, step: 0.01 },
   rag_chunk_count_cv: { label: 'RAG chunk count CV', help: 'Variance on how many chunks are retrieved per RAG call.', min: 0.05, max: 0.60, step: 0.05 },

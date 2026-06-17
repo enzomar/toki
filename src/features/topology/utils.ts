@@ -210,8 +210,12 @@ export function calculateAgentCost(
   trafficShare: number,
   pricingMap: PricingMap = PRICING,
   embeddingPricePer1M: number = EMBEDDING_PRICE_PER_1M,
+  workspacePricing?: WorkspacePricing,
 ): AgentCostBreakdown {
-  const pricing = getPricing(agent.model, pricingMap)
+  // Use effective pricing (with volume/batch discounts) when full workspace pricing is available
+  const pricing = workspacePricing
+    ? getEffectivePricing(agent.model, workspacePricing)
+    : getPricing(agent.model, pricingMap)
   const effectiveConversations = conversationsPerMonth * trafficShare
   const callsPerMonth = effectiveConversations * agent.callsPerConversation
 
@@ -266,7 +270,7 @@ export function calculateEstimate(
 
   const agentBreakdowns = agents.map((agent) => {
     const share = trafficShares.get(agent.id) ?? 1.0
-    return calculateAgentCost(agent, config.conversationsPerMonth, share, pricing.models, pricing.embeddingPricePer1M)
+    return calculateAgentCost(agent, config.conversationsPerMonth, share, pricing.models, pricing.embeddingPricePer1M, pricing)
   })
 
   const totalTokensPerMonth = agentBreakdowns.reduce((sum, a) => sum + a.totalTokensPerMonth, 0)

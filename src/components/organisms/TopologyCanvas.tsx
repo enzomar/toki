@@ -101,7 +101,6 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
   const [zoom, setZoom] = useState(resetViewState.zoom)
   const [pan, setPan] = useState<CanvasPoint>(resetViewState.pan)
   const [isPanning, setIsPanning] = useState(false)
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
 
   const clamp = (v: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v))
 
@@ -277,8 +276,6 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
                 transform={`translate(${node.x - NODE_W / 2}, ${node.y - NODE_H / 2})`}
                 onClick={() => clickNode(node.agent.id)}
                 onDoubleClick={() => dblClickNode(node.agent.id)}
-                onMouseEnter={() => setHoveredNodeId(node.agent.id)}
-                onMouseLeave={() => setHoveredNodeId(null)}
                 style={{ cursor: 'pointer' }}
                 opacity={dimmed ? 0.3 : 1}
               >
@@ -365,33 +362,6 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
             )
           })}
 
-          {/* Hover tooltip */}
-          {hoveredNodeId && !isPanning && (() => {
-            const hoveredLayout = nodeMap.get(hoveredNodeId)
-            const aeirNode = aeirNodeMap.get(hoveredNodeId)
-            const hoveredAgent = props.agents.find(a => a.id === hoveredNodeId)
-            if (!hoveredLayout || !hoveredAgent) return null
-            const share = trafficShares.get(hoveredNodeId) ?? 1
-            const tx = hoveredLayout.x + NODE_W / 2 + 12
-            const ty = hoveredLayout.y - NODE_H / 2
-            return (
-              <g transform={`translate(${tx}, ${ty})`} style={{ pointerEvents: 'none' }}>
-                <rect x="0" y="0" width="190" height={aeirNode ? 130 : 90} rx="8" fill="rgba(15,23,42,0.95)" />
-                <text x="10" y="18" fontSize="11" fontWeight="700" fill="#f1f5f9">{hoveredAgent.name}</text>
-                <text x="10" y="34" fontSize="9" fill="#94a3b8">{getModelLabel(hoveredAgent.model)} · {Math.round(share * 100)}% traffic</text>
-                <text x="10" y="50" fontSize="9" fill="#94a3b8">In: {hoveredAgent.inputTokensPerCall} · Out: {hoveredAgent.outputTokensPerCall} · Calls: {hoveredAgent.callsPerConversation}</text>
-                {hoveredAgent.mcpCalls > 0 && <text x="10" y="64" fontSize="9" fill="#c4b5fd">MCP ×{hoveredAgent.mcpCalls} · in:{hoveredAgent.mcpInputTokensPerCall} out:{hoveredAgent.mcpOutputTokensPerCall}</text>}
-                {hoveredAgent.ragEnabled && <text x="10" y={hoveredAgent.mcpCalls > 0 ? 78 : 64} fontSize="9" fill="#93c5fd">RAG {hoveredAgent.ragChunks} chunks × {hoveredAgent.ragChunkTokens} tok</text>}
-                {aeirNode && (
-                  <>
-                    <line x1="10" y1={90} x2="180" y2={90} stroke="#334155" strokeWidth="0.5" />
-                    <text x="10" y="106" fontSize="9" fill="#5eead4">AEIR: {aeirNode.type.toUpperCase()} · {Math.round(aeirNode.execution_probability * 100)}% exec</text>
-                    <text x="10" y="120" fontSize="9" fill="#5eead4">μ input: {Math.round(aeirNode.input_dist.mean)} · μ output: {Math.round(aeirNode.output_dist.mean)}</text>
-                  </>
-                )}
-              </g>
-            )
-          })()}
         </g>
       </svg>
     </Box>

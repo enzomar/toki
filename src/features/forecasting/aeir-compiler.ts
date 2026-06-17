@@ -191,9 +191,16 @@ function compileAgent(
       const mcpInputTotal = agent.mcpCalls * agent.mcpInputTokensPerCall
       const mcpOutputTotal = agent.mcpCalls * agent.mcpOutputTokensPerCall
       
+      // RAG nodes: input_dist should NOT include RAG context (engine adds it separately via sampling)
+      // Only base input + MCP overhead, grown by history
+      const ragBaseInput = agent.inputTokensPerCall + mcpInputTotal
+      const ragEffectiveInput = Math.round(ragBaseInput * avgGrowth)
+      const ragInputDist = pointToDistribution(ragEffectiveInput, cfg.token_cv)
+      
       return {
         ...baseNode,
         type: 'rag',
+        input_dist: ragInputDist, // Override: no RAG baked in (engine samples it)
         chunk_count_dist: pointToDistribution(agent.ragChunks, cfg.rag_chunk_count_cv),
         chunk_size_dist: pointToDistribution(agent.ragChunkTokens, cfg.rag_chunk_size_cv),
         amplification_factor: cfg.rag_amplification_factor,

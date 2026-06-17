@@ -90,7 +90,7 @@ export function EstimateSidebar({
               <Grid size={6}>
                 <Box sx={{ textAlign: 'center', py: 1.5, bgcolor: mcReport ? 'rgba(15, 118, 110, 0.06)' : 'rgba(19, 34, 56, 0.02)', borderRadius: 2, border: '1px solid', borderColor: mcReport ? 'rgba(15,118,110,0.2)' : 'rgba(19,34,56,0.06)' }}>
                   <Typography variant="overline" color="text.secondary" sx={{ fontSize: 9 }}>
-                    Monte Carlo{mcRunning ? ' …' : ''}
+                    MC Expected{mcRunning ? ' …' : ''}
                   </Typography>
                   <Typography variant="h6" sx={{ fontWeight: 800, color: mcReport ? 'primary.main' : 'text.disabled' }}>
                     {mcReport ? formatCost(mcReport.cost_expected_monthly) : '—'}

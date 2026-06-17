@@ -28,7 +28,7 @@ import type {
   DominantNode,
 } from './aeir-types'
 import type { WorkspacePricing } from '../topology/types'
-import { getPricing } from '../topology/utils'
+import { getEffectivePricing } from '../topology/utils'
 import {
   createRng,
   sampleTruncatedNormal,
@@ -67,20 +67,23 @@ function computeDeterministicBaseline(
     totalTokens += inp + out
 
     // Per-node cost using actual model pricing
-    const mp = getPricing(node.model, pricing.models)
+    const mp = getEffectivePricing(node.model, pricing)
     const uncached = inp * (1 - node.cache_rate)
     const cached = inp * node.cache_rate
     totalCost += (uncached / PRICING_TOKENS_PER_UNIT) * mp.in
       + (cached / PRICING_TOKENS_PER_UNIT) * mp.cached_in
       + (out / PRICING_TOKENS_PER_UNIT) * mp.out
 
-    // RAG embedding cost
+    // RAG: add context tokens + embedding cost (not baked into input_dist for RAG nodes)
     if (node.type === 'rag') {
       const rn = node as RAGNode
+      const ragContext = rn.chunk_count_dist.mean * rn.chunk_size_dist.mean * rn.amplification_factor * calls * p
       const emb = rn.embedding_tokens * calls * p
-      totalTokens += emb
+      totalInput += ragContext
+      totalTokens += ragContext + emb
       totalOutput += emb
-      totalCost += (emb / PRICING_TOKENS_PER_UNIT) * pricing.embeddingPricePer1M
+      totalCost += (ragContext / PRICING_TOKENS_PER_UNIT) * mp.in // RAG context is input
+      totalCost += (emb / PRICING_TOKENS_PER_UNIT) * pricing.embeddingPricePer1M * (1 - ((pricing.volumeDiscountPercent ?? 0) / 100))
     }
   }
 
@@ -306,15 +309,15 @@ function executeNode(
   const tokens = totalIn + totalOut + totalEmb
 
   // --- Per-node cost using actual model pricing ---
-  const mp = getPricing(node.model, pricing.models)
+  const mp = getEffectivePricing(node.model, pricing)
   const uncachedIn = totalIn * (1 - node.cache_rate)
   const cachedIn = totalIn * node.cache_rate
   let cost = (uncachedIn / PRICING_TOKENS_PER_UNIT) * mp.in
     + (cachedIn / PRICING_TOKENS_PER_UNIT) * mp.cached_in
     + (totalOut / PRICING_TOKENS_PER_UNIT) * mp.out
-  // Embedding priced separately
+  // Embedding priced separately (with volume discount)
   if (totalEmb > 0) {
-    cost += (totalEmb / PRICING_TOKENS_PER_UNIT) * pricing.embeddingPricePer1M
+    cost += (totalEmb / PRICING_TOKENS_PER_UNIT) * pricing.embeddingPricePer1M * (1 - ((pricing.volumeDiscountPercent ?? 0) / 100))
   }
 
   return { tokens, cost, input: totalIn, output: totalOut + totalEmb, breakdown: bd }
@@ -487,6 +490,14 @@ export function toExternalSchema(
   const det = computeDeterministicBaseline(graph, pricing)
   const convPerMonth = sim.metadata.conversations_per_month
 
+  // Volume variance: if users_cv or conversations_cv > 0, monthly scaling gets uncertainty
+  // Combined CV for volume = sqrt(users_cv² + conversations_cv²)
+  const volumeCV = Math.sqrt((cfg.users_cv || 0) ** 2 + (cfg.conversations_cv || 0) ** 2)
+  // For percentile scaling: p50 = base, p90 = base × (1 + 1.28×CV), p99 = base × (1 + 2.33×CV)
+  const volMultP50 = 1.0
+  const volMultP90 = volumeCV > 0 ? (1 + 1.28 * volumeCV) : 1.0
+  const volMultP99 = volumeCV > 0 ? (1 + 2.33 * volumeCV) : 1.0
+
   // Per-conversation values
   const tokP50 = Math.round(sim.total_tokens.p50)
   const tokP90 = Math.round(sim.total_tokens.p90)
@@ -494,10 +505,10 @@ export function toExternalSchema(
   const tokExp = Math.round(sim.total_tokens.expected)
   const tokWorst = Math.round(sim.total_tokens.worst)
 
-  // Monthly scale
-  const costP50 = sim.total_cost.p50 * convPerMonth
-  const costP90 = sim.total_cost.p90 * convPerMonth
-  const costP99 = sim.total_cost.p99 * convPerMonth
+  // Monthly scale (with volume variance applied to higher percentiles)
+  const costP50 = sim.total_cost.p50 * convPerMonth * volMultP50
+  const costP90 = sim.total_cost.p90 * convPerMonth * volMultP90
+  const costP99 = sim.total_cost.p99 * convPerMonth * volMultP99
   const costExp = sim.total_cost.expected * convPerMonth
 
   // Alignment
@@ -519,9 +530,9 @@ export function toExternalSchema(
     tokens_expected_per_conv: tokExp,
     tokens_worst_per_conv: tokWorst,
 
-    tokens_p50_monthly: tokP50 * convPerMonth,
-    tokens_p90_monthly: tokP90 * convPerMonth,
-    tokens_p99_monthly: tokP99 * convPerMonth,
+    tokens_p50_monthly: Math.round(tokP50 * convPerMonth * volMultP50),
+    tokens_p90_monthly: Math.round(tokP90 * convPerMonth * volMultP90),
+    tokens_p99_monthly: Math.round(tokP99 * convPerMonth * volMultP99),
     tokens_expected_monthly: tokExp * convPerMonth,
 
     breakdown_base_tokens: Math.round(sim.breakdown.base_tokens.expected),

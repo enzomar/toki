@@ -6,7 +6,7 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f7f2e7;
+  background-color: #f8fafb;
 }
 
 * {
@@ -17,6 +17,7 @@ html,
 body,
 #root {
   min-height: 100%;
+  height: 100%;
 }
 
 html {
@@ -26,12 +27,13 @@ html {
 body {
   margin: 0;
   min-width: 320px;
-  background: linear-gradient(180deg, #f7f2e7 0%, #f2ecdf 48%, #f6f1e7 100%);
+  background: #f8fafb;
   color: #132238;
 }
 
 #root {
   isolation: isolate;
+  height: 100%;
 }
 
 button,
@@ -44,6 +46,25 @@ textarea {
 ::selection {
   background: rgba(15, 118, 110, 0.18);
   color: #132238;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.15);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.3);
 }
 
 @keyframes toki-heart-pulse {

@@ -567,6 +567,10 @@
       margin: 0.04,
     });
   </script>
-  <a href="/" style="position: fixed; top: 10px; left: 10px; z-index: 9999; background: rgba(15,23,42,0.85); color: #fff; font-family: Manrope, sans-serif; font-size: 11px; font-weight: 700; padding: 5px 12px; border-radius: 6px; text-decoration: none; backdrop-filter: blur(8px);">← Back to Toki</a>
+  <a href="/" style="position: fixed; top: 10px; left: 10px; z-index: 9999; background: rgba(15,23,42,0.85); color: #fff; font-family: Manrope, sans-serif; font-size: 11px; font-weight: 700; padding: 5px 12px; border-radius: 6px; text-decoration: none; backdrop-filter: blur(8px);" id="back-link">← Back to Toki</a>
+  <script>
+    // Hide the back link when embedded in an iframe to avoid inception effect
+    try { if (window.self !== window.top) document.getElementById('back-link').style.display = 'none'; } catch(e) {}
+  </script>
 </body>
 </html>

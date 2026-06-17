@@ -175,7 +175,9 @@ export function DESTab({ agents, edges, pricing }: Props) {
               </Tooltip>
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <TextField fullWidth size="small" type="number" label="Retry delay (ms)" value={config.retryDelayMs} helperText="Wait before retry" onChange={(e) => setConfig(c => ({ ...c, retryDelayMs: Math.max(0, Number(e.target.value) || 1000) }))} />
+              <Tooltip title="How long to wait before retrying a failed call. Models exponential backoff behavior. Typical: 500-2000ms." arrow placement="top">
+                <TextField fullWidth size="small" type="number" label="Retry delay (ms)" value={config.retryDelayMs} helperText="Wait before retry" onChange={(e) => setConfig(c => ({ ...c, retryDelayMs: Math.max(0, Number(e.target.value) || 1000) }))} />
+              </Tooltip>
             </Grid>
           </Grid>
         </Box>

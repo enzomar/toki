@@ -18,8 +18,8 @@ const theme = createTheme({
       dark: '#9a5a05',
     },
     background: {
-      default: '#f6f1e7',
-      paper: '#fffdf8',
+      default: '#f8fafb',
+      paper: '#ffffff',
     },
     success: {
       main: '#2f855a',

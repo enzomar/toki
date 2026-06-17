@@ -17,6 +17,7 @@ import {
   Select,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import type { Agent, Edge, WorkspacePricing } from '../features/topology/types'
@@ -71,51 +72,61 @@ export function DESTab({ agents, edges, pricing }: Props) {
 
         <Grid container spacing={2}>
           <Grid size={{ xs: 6, sm: 3 }}>
-            <TextField
-              fullWidth size="small" type="number"
-              label="Requests"
-              value={config.numRequests}
-              onChange={(e) => setConfig(c => ({ ...c, numRequests: Math.max(1, Math.min(10000, Number(e.target.value) || 100)) }))}
-            />
+            <Tooltip title="Total number of incoming requests to simulate. Higher = more statistically significant results but slower." arrow placement="top">
+              <TextField
+                fullWidth size="small" type="number"
+                label="Requests"
+                value={config.numRequests}
+                onChange={(e) => setConfig(c => ({ ...c, numRequests: Math.max(1, Math.min(10000, Number(e.target.value) || 100)) }))}
+              />
+            </Tooltip>
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
-            <TextField
-              fullWidth size="small" type="number"
-              label="RPS"
-              value={config.requestsPerSecond}
-              onChange={(e) => setConfig(c => ({ ...c, requestsPerSecond: Math.max(0.1, Number(e.target.value) || 10) }))}
-              helperText="Requests/sec"
-            />
+            <Tooltip title="Sustained incoming request rate. For burst/spike patterns this is the base rate — peaks will be 3× or 10× higher." arrow placement="top">
+              <TextField
+                fullWidth size="small" type="number"
+                label="RPS"
+                value={config.requestsPerSecond}
+                onChange={(e) => setConfig(c => ({ ...c, requestsPerSecond: Math.max(0.1, Number(e.target.value) || 10) }))}
+                helperText="Requests/sec"
+              />
+            </Tooltip>
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Traffic pattern</InputLabel>
-              <Select
-                label="Traffic pattern"
-                value={config.trafficPattern}
-                onChange={(e) => setConfig(c => ({ ...c, trafficPattern: e.target.value as TrafficPattern }))}
-              >
-                <MenuItem value="constant">Constant</MenuItem>
-                <MenuItem value="burst">Burst (3× every 5s)</MenuItem>
-                <MenuItem value="spike">Spike (10× at 30%)</MenuItem>
-              </Select>
-            </FormControl>
+            <Tooltip title="Constant = uniform Poisson arrivals. Burst = 3× rate for 1s every 5s. Spike = 10× rate at 30% of sim duration." arrow placement="top">
+              <FormControl fullWidth size="small">
+                <InputLabel>Traffic pattern</InputLabel>
+                <Select
+                  label="Traffic pattern"
+                  value={config.trafficPattern}
+                  onChange={(e) => setConfig(c => ({ ...c, trafficPattern: e.target.value as TrafficPattern }))}
+                >
+                  <MenuItem value="constant">Constant</MenuItem>
+                  <MenuItem value="burst">Burst (3× every 5s)</MenuItem>
+                  <MenuItem value="spike">Spike (10× at 30%)</MenuItem>
+                </Select>
+              </FormControl>
+            </Tooltip>
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
-            <TextField
-              fullWidth size="small" type="number"
-              label="Max concurrency"
-              value={config.maxConcurrency}
-              onChange={(e) => setConfig(c => ({ ...c, maxConcurrency: Math.max(1, Number(e.target.value) || 50) }))}
-            />
+            <Tooltip title="Maximum number of requests being processed simultaneously. Excess requests are queued with 100ms backpressure delay." arrow placement="top">
+              <TextField
+                fullWidth size="small" type="number"
+                label="Max concurrency"
+                value={config.maxConcurrency}
+                onChange={(e) => setConfig(c => ({ ...c, maxConcurrency: Math.max(1, Number(e.target.value) || 50) }))}
+              />
+            </Tooltip>
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
-            <TextField
-              fullWidth size="small" type="number"
-              label="Seed"
-              value={config.seed}
-              onChange={(e) => setConfig(c => ({ ...c, seed: Number(e.target.value) || 42 }))}
-            />
+            <Tooltip title="Random seed for reproducible results. Same seed + same config = identical simulation output." arrow placement="top">
+              <TextField
+                fullWidth size="small" type="number"
+                label="Seed"
+                value={config.seed}
+                onChange={(e) => setConfig(c => ({ ...c, seed: Number(e.target.value) || 42 }))}
+              />
+            </Tooltip>
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
@@ -129,25 +140,39 @@ export function DESTab({ agents, edges, pricing }: Props) {
           <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 1 }}>Latency Parameters</Typography>
           <Grid container spacing={2}>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <TextField fullWidth size="small" type="number" label="LLM tok/sec" value={config.llmTokensPerSecond} helperText="Token generation speed" onChange={(e) => setConfig(c => ({ ...c, llmTokensPerSecond: Math.max(1, Number(e.target.value) || 50) }))} />
+              <Tooltip title="How fast the LLM generates output tokens. GPT-4o ≈ 80 tok/s, Claude ≈ 50 tok/s, local models ≈ 20 tok/s. Directly determines agent processing time." arrow placement="top">
+                <TextField fullWidth size="small" type="number" label="LLM tok/sec" value={config.llmTokensPerSecond} helperText="Token generation speed" onChange={(e) => setConfig(c => ({ ...c, llmTokensPerSecond: Math.max(1, Number(e.target.value) || 50) }))} />
+              </Tooltip>
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <TextField fullWidth size="small" type="number" label="LLM overhead (ms)" value={config.llmOverheadMs} helperText="Fixed latency per call" onChange={(e) => setConfig(c => ({ ...c, llmOverheadMs: Math.max(0, Number(e.target.value) || 200) }))} />
+              <Tooltip title="Fixed overhead per LLM API call: network round-trip + prompt processing before tokens start streaming. Typically 100-500ms depending on provider and prompt size." arrow placement="top">
+                <TextField fullWidth size="small" type="number" label="LLM overhead (ms)" value={config.llmOverheadMs} helperText="Fixed latency per call" onChange={(e) => setConfig(c => ({ ...c, llmOverheadMs: Math.max(0, Number(e.target.value) || 200) }))} />
+              </Tooltip>
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <TextField fullWidth size="small" type="number" label="MCP min (ms)" value={config.mcpLatencyMinMs} helperText="Tool call min latency" onChange={(e) => setConfig(c => ({ ...c, mcpLatencyMinMs: Math.max(0, Number(e.target.value) || 200) }))} />
+              <Tooltip title="Minimum latency for an MCP tool call (best case). Includes network + tool execution. Fast tools (DB lookup): 50-200ms. API calls: 200-500ms." arrow placement="top">
+                <TextField fullWidth size="small" type="number" label="MCP min (ms)" value={config.mcpLatencyMinMs} helperText="Tool call min latency" onChange={(e) => setConfig(c => ({ ...c, mcpLatencyMinMs: Math.max(0, Number(e.target.value) || 200) }))} />
+              </Tooltip>
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <TextField fullWidth size="small" type="number" label="MCP max (ms)" value={config.mcpLatencyMaxMs} helperText="Tool call max latency" onChange={(e) => setConfig(c => ({ ...c, mcpLatencyMaxMs: Math.max(config.mcpLatencyMinMs, Number(e.target.value) || 2000) }))} />
+              <Tooltip title="Maximum latency for an MCP tool call (worst case). Complex tools, external APIs with retries, or heavy compute can take 2-10s." arrow placement="top">
+                <TextField fullWidth size="small" type="number" label="MCP max (ms)" value={config.mcpLatencyMaxMs} helperText="Tool call max latency" onChange={(e) => setConfig(c => ({ ...c, mcpLatencyMaxMs: Math.max(config.mcpLatencyMinMs, Number(e.target.value) || 2000) }))} />
+              </Tooltip>
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <TextField fullWidth size="small" type="number" label="RAG min (ms)" value={config.ragLatencyMinMs} helperText="Vector search min" onChange={(e) => setConfig(c => ({ ...c, ragLatencyMinMs: Math.max(0, Number(e.target.value) || 50) }))} />
+              <Tooltip title="Minimum latency for a RAG vector search query. Fast vector DBs (Pinecone, Weaviate): 20-100ms. Self-hosted: 50-300ms." arrow placement="top">
+                <TextField fullWidth size="small" type="number" label="RAG min (ms)" value={config.ragLatencyMinMs} helperText="Vector search min" onChange={(e) => setConfig(c => ({ ...c, ragLatencyMinMs: Math.max(0, Number(e.target.value) || 50) }))} />
+              </Tooltip>
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <TextField fullWidth size="small" type="number" label="RAG max (ms)" value={config.ragLatencyMaxMs} helperText="Vector search max" onChange={(e) => setConfig(c => ({ ...c, ragLatencyMaxMs: Math.max(config.ragLatencyMinMs, Number(e.target.value) || 500) }))} />
+              <Tooltip title="Maximum latency for a RAG vector search (cold cache, large index, or heavy reranking)." arrow placement="top">
+                <TextField fullWidth size="small" type="number" label="RAG max (ms)" value={config.ragLatencyMaxMs} helperText="Vector search max" onChange={(e) => setConfig(c => ({ ...c, ragLatencyMaxMs: Math.max(config.ragLatencyMinMs, Number(e.target.value) || 500) }))} />
+              </Tooltip>
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
-              <TextField fullWidth size="small" type="number" label="Retry prob" value={config.retryProbability} slotProps={{ htmlInput: { step: 0.01, min: 0, max: 0.5 } }} helperText="Failure rate (0-0.5)" onChange={(e) => setConfig(c => ({ ...c, retryProbability: Math.max(0, Math.min(0.5, Number(e.target.value) || 0.05)) }))} />
+              <Tooltip title="Probability that any agent call fails and needs a retry. 0.05 = 5% failure rate. Models transient errors, rate limits, and timeouts." arrow placement="top">
+                <TextField fullWidth size="small" type="number" label="Retry prob" value={config.retryProbability} slotProps={{ htmlInput: { step: 0.01, min: 0, max: 0.5 } }} helperText="Failure rate (0-0.5)" onChange={(e) => setConfig(c => ({ ...c, retryProbability: Math.max(0, Math.min(0.5, Number(e.target.value) || 0.05)) }))} />
+              </Tooltip>
             </Grid>
             <Grid size={{ xs: 6, sm: 3 }}>
               <TextField fullWidth size="small" type="number" label="Retry delay (ms)" value={config.retryDelayMs} helperText="Wait before retry" onChange={(e) => setConfig(c => ({ ...c, retryDelayMs: Math.max(0, Number(e.target.value) || 1000) }))} />
@@ -309,46 +334,58 @@ export function DESTab({ agents, edges, pricing }: Props) {
             return (
               <Grid container spacing={2}>
                 <Grid size={4}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="caption" color="text.secondary">CPU Cores</Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: cpuCores > 16 ? 'error.main' : 'text.primary' }}>{cpuCores} vCPU</Typography>
-                    <Typography variant="caption" color="text.secondary">{concurrencyNeeded} concurrent reqs</Typography>
-                  </Paper>
+                  <Tooltip title="Total vCPU needed across all nodes for the orchestration layer. Based on 0.1 vCPU per concurrent in-flight request (orchestration overhead, not LLM inference)." arrow>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">Total CPU (cluster)</Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 700, color: cpuCores > 16 ? 'error.main' : 'text.primary' }}>{cpuCores} vCPU</Typography>
+                      <Typography variant="caption" color="text.secondary">{concurrencyNeeded} concurrent reqs × 0.1</Typography>
+                    </Paper>
+                  </Tooltip>
                 </Grid>
                 <Grid size={4}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="caption" color="text.secondary">Memory</Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: memoryGB > 32 ? 'error.main' : 'text.primary' }}>{memoryGB.toFixed(1)} GB</Typography>
-                    <Typography variant="caption" color="text.secondary">~50MB per concurrent req</Typography>
-                  </Paper>
+                  <Tooltip title="Total RAM needed across all nodes. Each concurrent request holds ~50MB in memory (prompt context, agent state, response buffer). This is TOTAL cluster memory, not per-node." arrow>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">Total RAM (cluster)</Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 700, color: memoryGB > 32 ? 'error.main' : 'text.primary' }}>{memoryGB.toFixed(1)} GB</Typography>
+                      <Typography variant="caption" color="text.secondary">{concurrencyNeeded} reqs × 50MB each</Typography>
+                    </Paper>
+                  </Tooltip>
                 </Grid>
                 <Grid size={4}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="caption" color="text.secondary">Nodes (4vCPU/8GB each)</Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: nodesNeeded > 10 ? 'warning.main' : 'text.primary' }}>{nodesNeeded}</Typography>
-                    <Typography variant="caption" color="text.secondary">for {config.trafficPattern} traffic</Typography>
-                  </Paper>
+                  <Tooltip title={`Number of nodes needed (assuming 4 vCPU + 8GB RAM per node). Each node handles: ${Math.min(40, Math.floor(8192 / 50))} concurrent requests. Scale horizontally when queue depth > 10.`} arrow>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">Nodes (4vCPU / 8GB each)</Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 700, color: nodesNeeded > 10 ? 'warning.main' : 'text.primary' }}>{nodesNeeded}</Typography>
+                      <Typography variant="caption" color="text.secondary">{Math.ceil(cpuCores / nodesNeeded)} vCPU + {(memoryGB / nodesNeeded).toFixed(1)}GB per node</Typography>
+                    </Paper>
+                  </Tooltip>
                 </Grid>
                 <Grid size={4}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="caption" color="text.secondary">Peak Concurrency</Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700 }}>{concurrencyNeeded}</Typography>
-                    <Typography variant="caption" color="text.secondary">{peakRPS} peak RPS × {avgLatencySec.toFixed(1)}s avg</Typography>
-                  </Paper>
+                  <Tooltip title="Maximum requests being processed at the same time. Calculated as peak RPS × average latency. This drives all other sizing." arrow>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">Peak Concurrency</Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 700 }}>{concurrencyNeeded}</Typography>
+                      <Typography variant="caption" color="text.secondary">{peakRPS} peak RPS × {avgLatencySec.toFixed(1)}s avg latency</Typography>
+                    </Paper>
+                  </Tooltip>
                 </Grid>
                 <Grid size={4}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="caption" color="text.secondary">Log Storage/day</Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700 }}>{storagePerDayGB > 1 ? `${storagePerDayGB.toFixed(1)} GB` : `${Math.round(storagePerDayGB * 1024)} MB`}</Typography>
-                    <Typography variant="caption" color="text.secondary">event traces + metrics</Typography>
-                  </Paper>
+                  <Tooltip title="Disk space needed per day for storing event traces, metrics, and logs. Based on ~100 bytes per simulation event, extrapolated to 24h at the simulated rate." arrow>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">Log Storage / day</Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 700 }}>{storagePerDayGB > 1 ? `${storagePerDayGB.toFixed(1)} GB` : `${Math.round(storagePerDayGB * 1024)} MB`}</Typography>
+                      <Typography variant="caption" color="text.secondary">event traces + metrics</Typography>
+                    </Paper>
+                  </Tooltip>
                 </Grid>
                 <Grid size={4}>
-                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="caption" color="text.secondary">Network (peak)</Typography>
-                    <Typography variant="h5" sx={{ fontWeight: 700 }}>{networkMbps > 1 ? `${networkMbps.toFixed(1)} Mbps` : `${Math.round(networkMbps * 1024)} Kbps`}</Typography>
-                    <Typography variant="caption" color="text.secondary">token payload at peak</Typography>
-                  </Paper>
+                  <Tooltip title="Network bandwidth at peak load. Based on token payload size (avg 4 bytes/token) × peak RPS. This is ingress+egress for the orchestration layer only." arrow>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">Network (peak)</Typography>
+                      <Typography variant="h5" sx={{ fontWeight: 700 }}>{networkMbps > 1 ? `${networkMbps.toFixed(1)} Mbps` : `${Math.round(networkMbps * 1024)} Kbps`}</Typography>
+                      <Typography variant="caption" color="text.secondary">token payload at peak</Typography>
+                    </Paper>
+                  </Tooltip>
                 </Grid>
               </Grid>
             )

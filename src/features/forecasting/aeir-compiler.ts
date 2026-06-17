@@ -24,11 +24,12 @@ import type {
   RouterNode,
   TokenDistribution,
 } from './aeir-types'
+import type { AEIRSimConfig } from './aeir-config'
+import { DEFAULT_AEIR_SIM_CONFIG } from './aeir-config'
 import { createHash } from './aeir-utils'
 
 // --- Configuration ---
 
-const DEFAULT_CV = 0.15 // 15% coefficient of variation
 const COMPILER_VERSION = '1.1.0'
 
 // --- LRU Cache ---
@@ -66,7 +67,7 @@ const compilationCache = new CompilationCache()
 
 // --- Distribution Builder ---
 
-function pointToDistribution(value: number, cv: number = DEFAULT_CV): TokenDistribution {
+function pointToDistribution(value: number, cv: number = DEFAULT_AEIR_SIM_CONFIG.token_cv): TokenDistribution {
   const mean = Math.max(1, value)
   const stddev = mean * cv
   const min = Math.max(1, Math.round(mean * 0.3))
@@ -122,6 +123,7 @@ function compileAgent(
   agent: Agent,
   isEntry: boolean,
   hasOutgoing: boolean,
+  cfg: AEIRSimConfig = DEFAULT_AEIR_SIM_CONFIG,
 ): AEIRNode {
   const nodeType = inferNodeType(agent, isEntry, hasOutgoing)
   
@@ -134,11 +136,11 @@ function compileAgent(
   const effectiveInput = Math.round(baseInput * avgGrowth)
   const effectiveOutput = agent.outputTokensPerCall + (agent.mcpCalls * agent.mcpOutputTokensPerCall)
   
-  const inputDist = pointToDistribution(effectiveInput)
-  const outputDist = pointToDistribution(effectiveOutput)
+  const inputDist = pointToDistribution(effectiveInput, cfg.token_cv)
+  const outputDist = pointToDistribution(effectiveOutput, cfg.token_cv)
   const callsDist: TokenDistribution = {
     mean: agent.callsPerConversation,
-    stddev: Math.max(0.1, agent.callsPerConversation * 0.1),
+    stddev: Math.max(0.1, agent.callsPerConversation * cfg.calls_cv),
     min: Math.max(1, agent.callsPerConversation - 1),
     max: Math.ceil(agent.callsPerConversation * 1.5),
   }
@@ -172,12 +174,12 @@ function compileAgent(
         ...baseNode,
         type: 'tool',
         tool_name: agent.name,
-        schema_tokens: pointToDistribution(Math.round(mcpInputTotal * 0.4)),
-        request_tokens: pointToDistribution(mcpInputTotal),
-        response_tokens: pointToDistribution(mcpOutputTotal),
-        chain_probability: 0.2,
+        schema_tokens: pointToDistribution(Math.round(mcpInputTotal * cfg.mcp_schema_fraction), cfg.token_cv),
+        request_tokens: pointToDistribution(mcpInputTotal, cfg.token_cv),
+        response_tokens: pointToDistribution(mcpOutputTotal, cfg.token_cv),
+        chain_probability: cfg.mcp_chain_probability,
         chain_depth: 1,
-        retry_probability: 0.15,
+        retry_probability: cfg.mcp_retry_probability,
         retry_count: 1,
         history_growth_factor: agent.historyGrowthFactor,
       } as ToolNode
@@ -192,18 +194,18 @@ function compileAgent(
       return {
         ...baseNode,
         type: 'rag',
-        chunk_count_dist: pointToDistribution(agent.ragChunks, 0.2),
-        chunk_size_dist: pointToDistribution(agent.ragChunkTokens, 0.25),
-        amplification_factor: 1.5,
+        chunk_count_dist: pointToDistribution(agent.ragChunks, cfg.rag_chunk_count_cv),
+        chunk_size_dist: pointToDistribution(agent.ragChunkTokens, cfg.rag_chunk_size_cv),
+        amplification_factor: cfg.rag_amplification_factor,
         embedding_tokens: agent.ragEmbeddingTokens,
         history_growth_factor: agent.historyGrowthFactor,
         has_mcp: hasMcp,
         ...(hasMcp ? {
-          mcp_schema_tokens: pointToDistribution(Math.round(mcpInputTotal * 0.4)),
-          mcp_request_tokens: pointToDistribution(mcpInputTotal),
-          mcp_response_tokens: pointToDistribution(mcpOutputTotal),
-          mcp_chain_probability: 0.2,
-          mcp_retry_probability: 0.15,
+          mcp_schema_tokens: pointToDistribution(Math.round(mcpInputTotal * cfg.mcp_schema_fraction), cfg.token_cv),
+          mcp_request_tokens: pointToDistribution(mcpInputTotal, cfg.token_cv),
+          mcp_response_tokens: pointToDistribution(mcpOutputTotal, cfg.token_cv),
+          mcp_chain_probability: cfg.mcp_chain_probability,
+          mcp_retry_probability: cfg.mcp_retry_probability,
         } : {}),
       } as RAGNode
     }
@@ -300,6 +302,7 @@ export function compileToAEIR(
     graphName?: string
     graphDescription?: string
     useCache?: boolean
+    simConfig?: AEIRSimConfig
   }
 ): { graph: AEIRGraph; compilationTimeMs: number } {
   const startTime = performance.now()
@@ -347,10 +350,11 @@ export function compileToAEIR(
   }
   
   // Compile nodes
+  const cfg = options?.simConfig || DEFAULT_AEIR_SIM_CONFIG
   const aeirNodes: AEIRNode[] = agents.map(agent => {
     const isEntry = entryIds.includes(agent.id)
     const hasOutgoing = (outgoingEdgeMap.get(agent.id) || 0) > 0
-    return compileAgent(agent, isEntry, hasOutgoing)
+    return compileAgent(agent, isEntry, hasOutgoing, cfg)
   })
   
   // Compile edges

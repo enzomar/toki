@@ -46,6 +46,12 @@ export type CurrencyCode = 'USD' | 'EUR'
 export type ModelPricing = {
   in: number
   out: number
+  /** Cached input price (per 1M tokens). Defaults to in × 0.5 if not set */
+  cached_in?: number
+  /** Batch input price (per 1M tokens). Defaults to in × 0.5 if not set */
+  batch_in?: number
+  /** Batch output price (per 1M tokens). Defaults to out × 0.5 if not set */
+  batch_out?: number
 }
 
 export type PricingMap = Record<string, ModelPricing>
@@ -54,6 +60,10 @@ export type WorkspacePricing = {
   models: PricingMap
   embeddingPricePer1M: number
   currency: CurrencyCode
+  /** Global discount percentage (0-100) for volume/enterprise agreements */
+  volumeDiscountPercent?: number
+  /** Whether to use batch pricing (50% off, 24h turnaround) */
+  useBatchPricing?: boolean
 }
 
 export type TimeRange = 'day' | 'week' | 'month' | 'year'

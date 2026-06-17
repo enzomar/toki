@@ -49,8 +49,37 @@ export function toNumber(value: unknown, fallback: number): number {
 
 // --- Pricing helpers ---
 
-export function getPricing(model: string, pricingMap: PricingMap = PRICING): { in: number; out: number } {
-  return pricingMap[model] ?? { in: 0, out: 0 }
+export function getPricing(model: string, pricingMap: PricingMap = PRICING): { in: number; out: number; cached_in: number } {
+  const p = pricingMap[model]
+  if (!p) return { in: 0, out: 0, cached_in: 0 }
+  return { in: p.in, out: p.out, cached_in: p.cached_in ?? p.in * 0.5 }
+}
+
+/**
+ * Get effective pricing after applying workspace-level discounts (batch, volume).
+ */
+export function getEffectivePricing(
+  model: string,
+  pricing: WorkspacePricing,
+): { in: number; out: number; cached_in: number } {
+  const base = pricing.models[model]
+  if (!base) return { in: 0, out: 0, cached_in: 0 }
+  
+  const volumeMultiplier = 1 - ((pricing.volumeDiscountPercent ?? 0) / 100)
+  
+  if (pricing.useBatchPricing) {
+    return {
+      in: (base.batch_in ?? base.in * 0.5) * volumeMultiplier,
+      out: (base.batch_out ?? base.out * 0.5) * volumeMultiplier,
+      cached_in: (base.cached_in ?? base.in * 0.5) * volumeMultiplier,
+    }
+  }
+  
+  return {
+    in: base.in * volumeMultiplier,
+    out: base.out * volumeMultiplier,
+    cached_in: (base.cached_in ?? base.in * 0.5) * volumeMultiplier,
+  }
 }
 
 export function getModelLabel(model: string): string {
@@ -200,9 +229,9 @@ export function calculateAgentCost(
   const cachedInputTokens = inputTokensPerMonth * cacheRate
   const uncachedInputTokens = inputTokensPerMonth * (1 - cacheRate)
 
-  // Cached tokens cost ~10% of normal (90% discount)
+  // Use actual cached_in price from pricing model
   const inputCost = (uncachedInputTokens / PRICING_TOKENS_PER_UNIT) * pricing.in +
-    (cachedInputTokens / PRICING_TOKENS_PER_UNIT) * pricing.in * 0.1
+    (cachedInputTokens / PRICING_TOKENS_PER_UNIT) * pricing.cached_in
   const outputCost = (outputTokensPerMonth / PRICING_TOKENS_PER_UNIT) * pricing.out
   const embeddingCost = (embeddingTokensPerMonth / PRICING_TOKENS_PER_UNIT) * embeddingPricePer1M
   const costPerMonth = inputCost + outputCost + embeddingCost

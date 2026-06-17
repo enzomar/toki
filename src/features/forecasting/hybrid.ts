@@ -197,7 +197,7 @@ function computeDeterministicCostPerConv(profiles: AgentTokenProfile[], pricing:
     const mp = getPricing(p.model, pricing.models)
     const uncached = p.baseInputTokens * (1 - p.cacheRate)
     const cached = p.baseInputTokens * p.cacheRate
-    const inputCost = (uncached / PRICING_TOKENS_PER_UNIT) * mp.in + (cached / PRICING_TOKENS_PER_UNIT) * mp.in * 0.1
+    const inputCost = (uncached / PRICING_TOKENS_PER_UNIT) * mp.in + (cached / PRICING_TOKENS_PER_UNIT) * mp.cached_in
     const outputCost = (p.baseOutputTokens / PRICING_TOKENS_PER_UNIT) * mp.out
     const embCost = (p.embeddingTokens / PRICING_TOKENS_PER_UNIT) * pricing.embeddingPricePer1M
     return total + inputCost + outputCost + embCost

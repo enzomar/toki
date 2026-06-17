@@ -4,6 +4,7 @@ import { AddRounded, RemoveRounded, CenterFocusStrongRounded } from '@mui/icons-
 import { Box, IconButton, Paper, Stack, Typography } from '@mui/material'
 import { alpha } from '@mui/material/styles'
 import type { Agent, Edge, LayoutNode, WorkspacePricing } from '../../features/topology/types'
+import type { AEIRGraph, AEIRNode } from '../../features/forecasting/aeir-types'
 import {
   buildTopologyLayout,
   computeTrafficShares,
@@ -19,6 +20,9 @@ type TopologyCanvasProps = {
   report: null
   workspacePricing: WorkspacePricing
   onSelectAgent: (agentId: string) => void
+  onEditAgent?: (agentId: string) => void
+  /** Compiled AEIR graph for overlay metadata */
+  aeirGraph?: AEIRGraph | null
 }
 
 type CanvasPoint = { x: number; y: number }
@@ -27,7 +31,7 @@ const MIN_ZOOM = 0.4
 const MAX_ZOOM = 3.0
 const ZOOM_FACTOR = 1.12
 const NODE_W = 220
-const NODE_H = 110
+const NODE_H = 120
 
 // --- Color system ---
 const COLORS = {
@@ -85,12 +89,19 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
   const trafficShares = useMemo(() => computeTrafficShares(props.agents, props.edges), [props.agents, props.edges])
   const resetViewState = useMemo(() => getResetView(layout, width, height), [layout, width, height])
 
+  // AEIR node lookup for overlay metadata
+  const aeirNodeMap = useMemo(() => {
+    if (!props.aeirGraph) return new Map<string, AEIRNode>()
+    return new Map(props.aeirGraph.nodes.map(n => [n.id, n]))
+  }, [props.aeirGraph])
+
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dragRef = useRef<{ pointerId: number; cx: number; cy: number; px: number; py: number } | null>(null)
   const draggedRef = useRef(false)
   const [zoom, setZoom] = useState(resetViewState.zoom)
   const [pan, setPan] = useState<CanvasPoint>(resetViewState.pan)
   const [isPanning, setIsPanning] = useState(false)
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
 
   const clamp = (v: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v))
 
@@ -139,6 +150,7 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
     applyZoom(e.deltaY < 0 ? zoom * ZOOM_FACTOR : zoom / ZOOM_FACTOR, anchor)
   }
   const clickNode = (id: string) => { if (!draggedRef.current) props.onSelectAgent(id); draggedRef.current = false }
+  const dblClickNode = (id: string) => { if (props.onEditAgent) props.onEditAgent(id) }
 
   if (props.agents.length === 0) {
     return (
@@ -163,10 +175,11 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
       {/* Legend */}
       <Paper elevation={0} sx={{ position: 'absolute', bottom: 12, left: 12, zIndex: 2, px: 1.5, py: 0.75, borderRadius: 8, bgcolor: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(8px)', border: '1px solid', borderColor: 'divider' }}>
         <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: COLORS.entry.border }} /><Typography variant="caption" sx={{ fontSize: 10 }}>Entry</Typography></Stack>
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: COLORS.mcp.border }} /><Typography variant="caption" sx={{ fontSize: 10 }}>MCP</Typography></Stack>
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: COLORS.rag.border }} /><Typography variant="caption" sx={{ fontSize: 10 }}>RAG</Typography></Stack>
-          <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary' }}>Drag to pan · Scroll to zoom</Typography>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: '#059669' }} /><Typography variant="caption" sx={{ fontSize: 10 }}>Agent</Typography></Stack>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: '#2563eb' }} /><Typography variant="caption" sx={{ fontSize: 10 }}>RAG</Typography></Stack>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: '#7c3aed' }} /><Typography variant="caption" sx={{ fontSize: 10 }}>Tool/MCP</Typography></Stack>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: '#ea580c' }} /><Typography variant="caption" sx={{ fontSize: 10 }}>Router</Typography></Stack>
+          <Typography variant="caption" sx={{ fontSize: 10, color: 'text.secondary' }}>AEIR Graph · Drag to pan · Scroll to zoom</Typography>
         </Stack>
       </Paper>
 
@@ -263,6 +276,9 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
                 key={node.agent.id}
                 transform={`translate(${node.x - NODE_W / 2}, ${node.y - NODE_H / 2})`}
                 onClick={() => clickNode(node.agent.id)}
+                onDoubleClick={() => dblClickNode(node.agent.id)}
+                onMouseEnter={() => setHoveredNodeId(node.agent.id)}
+                onMouseLeave={() => setHoveredNodeId(null)}
                 style={{ cursor: 'pointer' }}
                 opacity={dimmed ? 0.3 : 1}
               >
@@ -301,6 +317,33 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
                   {`${incoming.length} in · ${outgoing.length} out`}
                 </text>
 
+                {/* AEIR metadata overlay */}
+                {(() => {
+                  const aeirNode = aeirNodeMap.get(node.agent.id)
+                  if (!aeirNode) return null
+                  const typeLabel = aeirNode.type.toUpperCase()
+                  const execProb = Math.round(aeirNode.execution_probability * 100)
+                  const typeColors: Record<string, { bg: string; text: string }> = {
+                    agent: { bg: '#d1fae5', text: '#065f46' },
+                    rag: { bg: '#dbeafe', text: '#1e40af' },
+                    tool: { bg: '#ede9fe', text: '#5b21b6' },
+                    router: { bg: '#ffedd5', text: '#9a3412' },
+                    composite: { bg: '#e0e7ff', text: '#3730a3' },
+                  }
+                  const tc = typeColors[aeirNode.type] || typeColors.agent
+                  return (
+                    <g>
+                      {/* AEIR type badge (top-left) */}
+                      <rect x="14" y="86" width={typeLabel.length * 7 + 10} height="16" rx="8" fill={tc.bg} />
+                      <text x="19" y="97" fontSize="8" fontWeight="800" fill={tc.text}>{typeLabel}</text>
+                      {/* Execution probability (top-right) */}
+                      <text x={NODE_W - 14} y="97" fontSize="9" fontWeight="600" fill="#64748b" textAnchor="end">
+                        {execProb}% exec
+                      </text>
+                    </g>
+                  )
+                })()}
+
                 {/* Badges row */}
                 {(node.agent.mcpCalls > 0 || node.agent.ragEnabled) && (
                   <g>
@@ -321,6 +364,34 @@ export function TopologyCanvas(props: TopologyCanvasProps) {
               </g>
             )
           })}
+
+          {/* Hover tooltip */}
+          {hoveredNodeId && !isPanning && (() => {
+            const hoveredLayout = nodeMap.get(hoveredNodeId)
+            const aeirNode = aeirNodeMap.get(hoveredNodeId)
+            const hoveredAgent = props.agents.find(a => a.id === hoveredNodeId)
+            if (!hoveredLayout || !hoveredAgent) return null
+            const share = trafficShares.get(hoveredNodeId) ?? 1
+            const tx = hoveredLayout.x + NODE_W / 2 + 12
+            const ty = hoveredLayout.y - NODE_H / 2
+            return (
+              <g transform={`translate(${tx}, ${ty})`} style={{ pointerEvents: 'none' }}>
+                <rect x="0" y="0" width="190" height={aeirNode ? 130 : 90} rx="8" fill="rgba(15,23,42,0.95)" />
+                <text x="10" y="18" fontSize="11" fontWeight="700" fill="#f1f5f9">{hoveredAgent.name}</text>
+                <text x="10" y="34" fontSize="9" fill="#94a3b8">{getModelLabel(hoveredAgent.model)} · {Math.round(share * 100)}% traffic</text>
+                <text x="10" y="50" fontSize="9" fill="#94a3b8">In: {hoveredAgent.inputTokensPerCall} · Out: {hoveredAgent.outputTokensPerCall} · Calls: {hoveredAgent.callsPerConversation}</text>
+                {hoveredAgent.mcpCalls > 0 && <text x="10" y="64" fontSize="9" fill="#c4b5fd">MCP ×{hoveredAgent.mcpCalls} · in:{hoveredAgent.mcpInputTokensPerCall} out:{hoveredAgent.mcpOutputTokensPerCall}</text>}
+                {hoveredAgent.ragEnabled && <text x="10" y={hoveredAgent.mcpCalls > 0 ? 78 : 64} fontSize="9" fill="#93c5fd">RAG {hoveredAgent.ragChunks} chunks × {hoveredAgent.ragChunkTokens} tok</text>}
+                {aeirNode && (
+                  <>
+                    <line x1="10" y1={90} x2="180" y2={90} stroke="#334155" strokeWidth="0.5" />
+                    <text x="10" y="106" fontSize="9" fill="#5eead4">AEIR: {aeirNode.type.toUpperCase()} · {Math.round(aeirNode.execution_probability * 100)}% exec</text>
+                    <text x="10" y="120" fontSize="9" fill="#5eead4">μ input: {Math.round(aeirNode.input_dist.mean)} · μ output: {Math.round(aeirNode.output_dist.mean)}</text>
+                  </>
+                )}
+              </g>
+            )
+          })()}
         </g>
       </svg>
     </Box>

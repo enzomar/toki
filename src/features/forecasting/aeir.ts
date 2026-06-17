@@ -23,6 +23,7 @@ import type {
   AEIRSimulationResult,
   ExternalForecastResult,
 } from './aeir-types'
+import type { AEIRSimConfig } from './aeir-config'
 import { compileToAEIR } from './aeir-compiler'
 import { runAEIRSimulation, toExternalSchema } from './aeir-engine'
 
@@ -38,6 +39,8 @@ export type AEIRForecastOptions = {
   /** Graph metadata */
   graphName?: string
   graphDescription?: string
+  /** Simulation configuration (tunable factors) */
+  simConfig?: AEIRSimConfig
 }
 
 /**
@@ -65,6 +68,7 @@ export function runAEIRForecast(
     graphName: options?.graphName || 'User Topology',
     graphDescription: options?.graphDescription,
     useCache: options?.useCache ?? true,
+    simConfig: options?.simConfig,
   })
   
   // Step 2: Create execution context
@@ -79,10 +83,10 @@ export function runAEIRForecast(
   }
   
   // Step 3: Run simulation
-  const simulation = runAEIRSimulation(graph, context, pricing)
+  const simulation = runAEIRSimulation(graph, context, pricing, options?.simConfig)
   
   // Step 4: Convert to external schema
-  return toExternalSchema(simulation, graph, pricing, compilationTimeMs)
+  return toExternalSchema(simulation, graph, pricing, compilationTimeMs, options?.simConfig)
 }
 
 /**
@@ -139,6 +143,8 @@ export function runRawAEIRSimulation(
 // --- Re-exports ---
 
 export { compileToAEIR, clearCompilationCache, getCompilationCacheStats } from './aeir-compiler'
+export { DEFAULT_AEIR_SIM_CONFIG, AEIR_SIM_CONFIG_META } from './aeir-config'
+export type { AEIRSimConfig } from './aeir-config'
 export type {
   AEIRGraph,
   AEIRNode,

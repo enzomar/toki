@@ -26,17 +26,21 @@ export const MODEL_OPTIONS: ModelOption[] = [
 
 export const PRICING_TOKENS_PER_UNIT = 1_000_000
 
-export const PRICING: Record<string, { in: number; out: number }> = {
-  'gpt-4.1': { in: 2.00, out: 8.00 },
-  'gpt-4.1-mini': { in: 0.40, out: 1.60 },
-  'gpt-4.1-nano': { in: 0.10, out: 0.40 },
-  'gpt-4o': { in: 2.50, out: 10.00 },
-  'gpt-4o-mini': { in: 0.15, out: 0.60 },
-  'o3': { in: 2.00, out: 8.00 },
-  'o4-mini': { in: 1.10, out: 4.40 },
-  'claude-sonnet-4': { in: 3.00, out: 15.00 },
-  'claude-haiku-4': { in: 1.00, out: 5.00 },
-  'claude-opus-4': { in: 15.00, out: 75.00 },
+export const PRICING: Record<string, { in: number; out: number; cached_in?: number; batch_in?: number; batch_out?: number }> = {
+  // OpenAI GPT-4.1 series (Apr 2025)
+  'gpt-4.1': { in: 2.00, out: 8.00, cached_in: 0.50, batch_in: 1.00, batch_out: 4.00 },
+  'gpt-4.1-mini': { in: 0.40, out: 1.60, cached_in: 0.10, batch_in: 0.20, batch_out: 0.80 },
+  'gpt-4.1-nano': { in: 0.10, out: 0.40, cached_in: 0.025, batch_in: 0.05, batch_out: 0.20 },
+  // OpenAI GPT-4o series
+  'gpt-4o': { in: 2.50, out: 10.00, cached_in: 1.25, batch_in: 1.25, batch_out: 5.00 },
+  'gpt-4o-mini': { in: 0.15, out: 0.60, cached_in: 0.075, batch_in: 0.075, batch_out: 0.30 },
+  // OpenAI reasoning models
+  'o3': { in: 2.00, out: 8.00, cached_in: 0.50, batch_in: 1.00, batch_out: 4.00 },
+  'o4-mini': { in: 1.10, out: 4.40, cached_in: 0.275, batch_in: 0.55, batch_out: 2.20 },
+  // Anthropic Claude 4 series
+  'claude-sonnet-4': { in: 3.00, out: 15.00, cached_in: 0.30, batch_in: 1.50, batch_out: 7.50 },
+  'claude-haiku-4': { in: 1.00, out: 5.00, cached_in: 0.10, batch_in: 0.50, batch_out: 2.50 },
+  'claude-opus-4': { in: 15.00, out: 75.00, cached_in: 1.50, batch_in: 7.50, batch_out: 37.50 },
 }
 
 export const EMBEDDING_PRICE_PER_1M = 0.02

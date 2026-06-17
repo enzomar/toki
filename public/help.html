@@ -201,10 +201,129 @@
           <tr><td>MCP tool calls</td><td>Input overhead (result fed back) + Output overhead</td><td>Often 30-60% extra</td></tr>
           <tr><td>RAG retrieval</td><td>Chunks × tokens/chunk added to input</td><td>Input inflation</td></tr>
           <tr><td>History growth</td><td>Geometric series across multi-turn calls</td><td>2-4× for chatbots</td></tr>
-          <tr><td>Prompt caching</td><td>% of input served from cache (90% discount)</td><td>Up to 50% savings</td></tr>
+          <tr><td>Prompt caching</td><td>% of input served from cache (model-specific discount)</td><td>Up to 75% savings</td></tr>
           <tr><td>Traffic routing</td><td>Edge weights propagated via BFS</td><td>Right-sizes each agent</td></tr>
         </table>
         <p class="footer-note">Formula: effective_conversations × calls × (input + RAG + MCP_in) × price_in + output × price_out</p>
+      </section>
+
+      <!-- 6b. Two Forecasting Approaches -->
+      <section>
+        <h2>📊 Two Forecasting Approaches</h2>
+        <div class="two-col">
+          <div class="card" style="border-left: 4px solid #64748b;">
+            <h3>📐 Deterministic</h3>
+            <p><strong>The "plan" number.</strong></p>
+            <ul>
+              <li>Multiplies each agent's tokens × calls × traffic share</li>
+              <li>Gives one fixed value — the expected outcome</li>
+              <li>Assumes everything goes exactly as configured</li>
+              <li>Fast, predictable, easy to explain</li>
+            </ul>
+            <p style="font-size: 0.6em; color: #64748b; margin-top: 0.4em;"><em>"If nothing surprising happens, it'll cost this much."</em></p>
+          </div>
+          <div class="card" style="border-left: 4px solid #0f766e;">
+            <h3>🎲 Monte Carlo</h3>
+            <p><strong>The "reality" range.</strong></p>
+            <ul>
+              <li>Simulates hundreds of real conversations</li>
+              <li>Each run takes random paths through your agents</li>
+              <li>Varies RAG chunks, MCP calls, retries each time</li>
+              <li>Produces a range: typical, high, and worst-case</li>
+            </ul>
+            <p style="font-size: 0.6em; color: #0f766e; margin-top: 0.4em;"><em>"Here's what it could actually cost — including bad days."</em></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6c. Monte Carlo: How It Works -->
+      <section>
+        <h2>🎲 Monte Carlo: How It Works</h2>
+        <div class="flow-row">
+          <div class="flow-step">Your<br/>Topology</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">Compile to<br/>AEIR Graph</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step">Simulate<br/>200+ runs</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-step" style="background: #ecfdf5; border-color: #059669;">Percentile<br/>Results</div>
+        </div>
+        <div class="two-col" style="margin-top: 0.8em;">
+          <div class="card">
+            <h3>Each simulation run:</h3>
+            <ol style="font-size: 0.6em;">
+              <li>Start at entry agents</li>
+              <li>Roll dice at each connection (probability = edge weight)</li>
+              <li>If "yes" → follow that path, if "no" → skip it</li>
+              <li>At each agent, randomly vary token counts (±15%)</li>
+              <li>RAG: re-sample how many chunks, how large</li>
+              <li>MCP: chance of tool chaining and retries</li>
+              <li>Calculate cost using actual model pricing</li>
+            </ol>
+          </div>
+          <div class="card">
+            <h3>What you learn:</h3>
+            <ul style="font-size: 0.6em;">
+              <li><strong>p50</strong> — Typical cost (half are lower)</li>
+              <li><strong>p90</strong> — High-end (only 10% exceed this)</li>
+              <li><strong>p99</strong> — Tail risk (1 in 100 conversations)</li>
+              <li><strong>Tail risk factor</strong> — How much worse p99 is vs p50</li>
+              <li><strong>Dominant nodes</strong> — Which agents drive cost spikes</li>
+            </ul>
+            <p style="font-size: 0.55em; color: #64748b; margin-top: 0.3em;">A tail risk of 2.5× means your worst-case day costs 2.5× your typical day.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6d. When to Trust Which Number -->
+      <section>
+        <h2>💡 When to Trust Which Number</h2>
+        <table>
+          <tr><th>Question</th><th>Use</th><th>Why</th></tr>
+          <tr><td>What should my monthly budget be?</td><td><span class="badge badge-green">Deterministic</span></td><td>Stable, explainable, good for approvals</td></tr>
+          <tr><td>What's the worst-case for my CTO?</td><td><span class="badge badge-purple">MC p99</span></td><td>Shows real tail risk from tool chains/retries</td></tr>
+          <tr><td>Is my architecture cost-efficient?</td><td><span class="badge badge-blue">MC Dominant Nodes</span></td><td>Shows which agents are expensive and why</td></tr>
+          <tr><td>Can I reduce costs with caching?</td><td><span class="badge badge-green">Both</span></td><td>Adjust cache % and see both numbers drop</td></tr>
+          <tr><td>How risky is my MCP tool design?</td><td><span class="badge badge-purple">MC Tail risk</span></td><td>High p99/p50 ratio = tools cascading badly</td></tr>
+        </table>
+        <div style="margin-top: 0.8em; padding: 0.6em; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;">
+          <p style="font-size: 0.6em; text-align: center; margin: 0;">
+            <strong>Alignment check:</strong> When deterministic ≈ MC expected (within ±15%), your model is reliable.<br/>
+            When they diverge ⚠, real-world variability might significantly exceed your plan.
+          </p>
+        </div>
+      </section>
+
+      <!-- 6e. Confidence Score Explained -->
+      <section>
+        <h2>🎯 Confidence Score</h2>
+        <p class="subtitle">The confidence % tells you how much to trust the forecast.</p>
+        <div class="two-col" style="margin-top: 0.6em;">
+          <div class="card">
+            <h3>What reduces confidence:</h3>
+            <table style="font-size: 0.55em;">
+              <tr><td><strong>Misalignment</strong> (MC ≠ deterministic)</td><td>−20%</td></tr>
+              <tr><td><strong>High variance</strong> (results spread widely)</td><td>−10% to −40%</td></tr>
+              <tr><td><strong>Default token values</strong> (not measured)</td><td>−15%</td></tr>
+              <tr><td><strong>Missing connections</strong> (routing unknown)</td><td>−15%</td></tr>
+            </table>
+          </div>
+          <div class="card">
+            <h3>How to improve it:</h3>
+            <ul style="font-size: 0.6em;">
+              <li>Measure real prompt token counts (use Token Tool)</li>
+              <li>Set history growth for multi-turn agents</li>
+              <li>Add connections between agents with weights</li>
+              <li>Increase simulation count (200→500)</li>
+              <li>Configure MCP call counts accurately</li>
+            </ul>
+          </div>
+        </div>
+        <div class="stat-row" style="margin-top: 0.6em;">
+          <div class="stat-box"><div class="num" style="color: #059669;">90%+</div><div class="label">High — budget this</div></div>
+          <div class="stat-box"><div class="num" style="color: #d97706;">60-89%</div><div class="label">Medium — add buffer</div></div>
+          <div class="stat-box"><div class="num" style="color: #dc2626;">&lt;60%</div><div class="label">Low — refine inputs</div></div>
+        </div>
       </section>
 
       <!-- 7. For Managers: Output & Confidence -->
@@ -309,9 +428,7 @@
             <ul>
               <li>Multi-stage Docker (Node build → nginx)</li>
               <li>Port 8080, non-root (UID 1000)</li>
-              <li>OpenShift SCC compliant</li>
               <li>/health endpoint for probes</li>
-              <li>50m CPU / 64Mi RAM</li>
               <li><strong>No backend, no database</strong></li>
             </ul>
           </div>
@@ -335,24 +452,44 @@
         <div class="three-col">
           <div class="card" style="font-size: 0.6em;">
             <strong>✅ What it does</strong><br/>
-            Planning-stage cost estimation for multi-agent LLM systems
+            Planning-stage cost forecasting for multi-agent LLM systems using deterministic + Monte Carlo simulation
           </div>
           <div class="card" style="font-size: 0.6em;">
             <strong>❌ What it doesn't do</strong><br/>
-            Production billing reconciliation or real-time spend monitoring
+            Production billing reconciliation, real-time spend monitoring, or actual API call execution
           </div>
           <div class="card" style="font-size: 0.6em;">
             <strong>📈 Roadmap</strong><br/>
-            Usage log calibration, what-if comparisons, team workspaces
+            Usage log calibration, scenario comparisons, team workspaces, budget alerts
           </div>
         </div>
-        <div class="three-col" style="margin-top: 0.6em;">
-          <div class="card" style="font-size: 0.55em;"><strong>No variance modeling</strong> — all calls identical size</div>
-          <div class="card" style="font-size: 0.55em;"><strong>Cache = 90% fixed</strong> — OpenAI gives 50%</div>
-          <div class="card" style="font-size: 0.55em;"><strong>No rate limit cost</strong> — throttling not modeled</div>
-          <div class="card" style="font-size: 0.55em;"><strong>Static pricing</strong> — no batch/real-time tiers</div>
-          <div class="card" style="font-size: 0.55em;"><strong>No fine-tuning</strong> — training cost excluded</div>
-          <div class="card" style="font-size: 0.55em;"><strong>Global embedding</strong> — same rate all agents</div>
+        <div class="two-col" style="margin-top: 0.6em;">
+          <div class="card">
+            <h3 style="color: #059669;">✅ Implemented</h3>
+            <ul style="font-size: 0.55em;">
+              <li><strong>Monte Carlo simulation</strong> — graph-walking with random paths</li>
+              <li><strong>Connection weights as probabilities</strong> — edges are Bernoulli gates</li>
+              <li><strong>Per-node cost tracking</strong> — actual model pricing per agent</li>
+              <li><strong>MCP chain/retry depth</strong> — geometric probability model</li>
+              <li><strong>Cache pricing</strong> — model-specific cached token rates</li>
+              <li><strong>Batch pricing</strong> — optional 50% discount toggle</li>
+              <li><strong>Volume discounts</strong> — global % discount for enterprise</li>
+              <li><strong>Configurable variance</strong> — all simulation factors tunable</li>
+              <li><strong>Routing modes</strong> — weighted, fan-out, round-robin</li>
+              <li><strong>History growth</strong> — geometric series per-call growth</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3 style="color: #d97706;">⚠️ Not yet modeled</h3>
+            <ul style="font-size: 0.55em;">
+              <li><strong>Rate limit / 429 retries</strong> — throttling cost not simulated</li>
+              <li><strong>Fine-tuning cost</strong> — training epochs excluded</li>
+              <li><strong>Dynamic agent spawning</strong> — topology is static at compile time</li>
+              <li><strong>Latency estimation</strong> — only token/cost, not time-to-response</li>
+              <li><strong>Cross-region pricing</strong> — no per-region rate differences</li>
+              <li><strong>Token counting accuracy</strong> — uses estimates, not real tokenizer</li>
+            </ul>
+          </div>
         </div>
       </section>
 
@@ -400,7 +537,7 @@
         <h2 style="color: #5eead4;">Thank you</h2>
         <div style="margin: 0.8em auto; max-width: 380px; text-align: left; color: #cbd5e1; font-size: 0.65em;">
           <p><strong style="color: #f8fafc;">Creator:</strong> Vincenzo MARAFIOTI</p>
-          <p><strong style="color: #f8fafc;">Tool:</strong> toki.forge.amadeus.net</p>
+          <p><strong style="color: #f8fafc;">Tool:</strong> toki.forge.amadeus.net (WHISHED)</p>
           <p><strong style="color: #f8fafc;">Source:</strong> Corporate Git repository</p>
           <p><strong style="color: #f8fafc;">Hosting:</strong> Forge (Amadeus)</p>
         </div>

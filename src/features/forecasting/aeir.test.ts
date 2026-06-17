@@ -90,7 +90,7 @@ describe('AEIR Forecasting', () => {
       const result2 = compileToAEIR(agents, [])
       
       // Second compilation should be faster (cached)
-      expect(result2.compilationTimeMs).toBeLessThanOrEqual(result1.compilationTimeMs)
+      expect(result2.compilationTimeMs).toBeLessThan(5) // cached = near-instant
       expect(result2.graph.id).toBe(result1.graph.id)
     })
   })

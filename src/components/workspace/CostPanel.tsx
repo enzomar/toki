@@ -68,6 +68,17 @@ export function CostPanel({
       {/* Header */}
       <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>Cost Forecast</Typography>
 
+      {/* Empty state */}
+      {agents.length === 0 ? (
+        <Box sx={{ py: 4, textAlign: 'center' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            Add agents and set traffic volume to see your cost forecast here.
+          </Typography>
+          <Typography variant="caption" color="text.disabled">
+            The forecast updates in real-time as you configure your system.
+          </Typography>
+        </Box>
+      ) : (
       <Stack spacing={2}>
         {/* Primary metrics */}
         <Grid container spacing={1.5}>
@@ -281,6 +292,7 @@ export function CostPanel({
           )}
         </Box>
       </Stack>
+      )}
     </Paper>
   )
 }

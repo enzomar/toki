@@ -33,6 +33,7 @@ import type { NavPage } from './components/layout/AppShell'
 import { WorkspacePage } from './components/workspace/WorkspacePage'
 import { TopologyPage } from './components/topology/TopologyPage'
 import { SimulationPage } from './components/simulation/SimulationPage'
+import { TokenToolPage } from './components/token-tool/TokenToolPage'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { HelpPage } from './components/help/HelpPage'
 import { McDetailDialog } from './components/McDetailDialog'
@@ -179,6 +180,12 @@ export default function App() {
     setSnackbar({ severity: 'success', message: `Loaded: ${sample.label}` })
   }
 
+  const resetWorkspace = () => {
+    if (!window.confirm('Clear all agents, connections, and settings?')) return
+    Object.keys(localStorage).filter((k) => k.startsWith('toki:')).forEach((k) => localStorage.removeItem(k))
+    window.location.replace(window.location.pathname)
+  }
+
   // --- Render ---
   return (
     <AppShell activePage={activePage} onNavigate={setActivePage} version={APP_VERSION}>
@@ -187,7 +194,7 @@ export default function App() {
           workspaceName={workspaceName}
           setWorkspaceName={setWorkspaceName}
           agents={agents}
-          edges={safeEdges}
+          edges={edges}
           estimateConfig={estimateConfig}
           setEstimateConfig={setEstimateConfig}
           pricing={pricing}
@@ -220,6 +227,7 @@ export default function App() {
           onSnackbar={setSnackbar}
           onLoadSample={(e) => setSamplesAnchor(e.currentTarget)}
           loadSample={loadSample}
+          resetWorkspace={resetWorkspace}
           bulkChangeModel={bulkChangeModel}
           formatCost={formatCost}
         />
@@ -233,6 +241,7 @@ export default function App() {
           estimate={estimate}
           modelOptions={modelOptions}
           aeirGraph={aeirGraph}
+          trafficConfig={estimateConfig.conversationsPerMonth > 0 ? { users: estimateConfig.users, conversationsPerUser: estimateConfig.conversationsPerUser, conversationsPerMonth: scaledConfig.conversationsPerMonth, timeRange: estimateConfig.timeRange } : undefined}
           updateAgent={updateAgent}
           removeAgent={removeAgent}
           updateEdge={updateEdge}
@@ -242,6 +251,7 @@ export default function App() {
           loadSample={loadSample}
           formatCost={formatCost}
           onSnackbar={setSnackbar}
+          onNavigateToWorkspace={() => setActivePage('workspace')}
         />
       )}
 
@@ -252,6 +262,8 @@ export default function App() {
           pricing={pricing}
         />
       )}
+
+      {activePage === 'token-tool' && <TokenToolPage />}
 
       {activePage === 'settings' && (
         <SettingsPage

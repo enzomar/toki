@@ -50,7 +50,7 @@ export function TrafficSection({ estimateConfig, setEstimateConfig }: Props) {
             label="Active users"
             placeholder="e.g. 5000"
             value={estimateConfig.users || ''}
-            helperText="Monthly active users"
+            helperText="Active users per time range"
             onChange={(e) => {
               const users = Math.max(0, Math.round(toNumber(e.target.value, 0)))
               setEstimateConfig((c) => ({

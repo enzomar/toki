@@ -53,7 +53,7 @@ describe('Navigation', () => {
     renderApp()
     const settingsNav = screen.getByText('Settings')
     await userEvent.click(settingsNav)
-    expect(screen.getByText('Model Pricing')).toBeInTheDocument()
+    expect(screen.getByText('Pricing Configuration')).toBeInTheDocument()
   })
 
   it('switches to Simulation page', async () => {

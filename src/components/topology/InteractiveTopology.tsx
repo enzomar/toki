@@ -18,6 +18,7 @@ import {
   Panel,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   MarkerType,
   Position,
   type Node,
@@ -61,6 +62,13 @@ type AgentNodeData = {
   aeirType?: string
 }
 
+type TrafficNodeData = {
+  users: number
+  conversationsPerUser: number
+  conversationsPerMonth: number
+  timeRange: string
+}
+
 type Props = {
   agents: Agent[]
   edges: TopoEdge[]
@@ -71,12 +79,14 @@ type Props = {
   getTrafficShare: (id: string) => number
   isEntry: (id: string) => boolean
   formatCost: (v: number) => string
+  trafficConfig?: { users: number; conversationsPerUser: number; conversationsPerMonth: number; timeRange: string }
   onUpdateAgent: (id: string, patch: Partial<Agent>) => void
   onRemoveAgent: (id: string) => void
   onAddEdge: (sourceId: string, targetId: string, weight: number) => void
   onUpdateEdge: (id: string, patch: Partial<TopoEdge>) => void
   onRemoveEdge: (id: string) => void
   onAddAgent: () => void
+  onEditTraffic?: () => void
 }
 
 // --- Custom Node ---
@@ -101,7 +111,6 @@ function AgentNode({ data }: { data: AgentNodeData }) {
         bgcolor: bgColor,
         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
       }}>
-        <Box sx={{ height: 3, bgcolor: borderColor, borderRadius: '10px 10px 0 0' }} />
         <Box sx={{ p: 1.5 }}>
           <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 700, fontSize: 12, lineHeight: 1.3 }}>
@@ -115,7 +124,7 @@ function AgentNode({ data }: { data: AgentNodeData }) {
             {getModelLabel(agent.model)} · {Math.round(trafficShare * 100)}%
           </Typography>
           <Typography variant="caption" sx={{ fontSize: 9, color: '#94a3b8', display: 'block', mt: 0.25 }}>
-            {agent.callsPerConversation} call{agent.callsPerConversation > 1 ? 's' : ''} · {agent.inputTokensPerCall} in / {agent.outputTokensPerCall} out
+            {agent.callsPerConversation} call{agent.callsPerConversation > 1 ? 's' : ''} · ↓{agent.inputTokensPerCall} ↑{agent.outputTokensPerCall} tok
           </Typography>
           <Stack direction="row" sx={{ mt: 1, justifyContent: 'space-between', alignItems: 'center' }}>
             <Stack direction="row" spacing={0.5}>
@@ -134,6 +143,50 @@ function AgentNode({ data }: { data: AgentNodeData }) {
         type="source"
         position={Position.Right}
         style={{ width: 10, height: 10, background: borderColor, border: '2px solid #fff' }}
+      />
+    </>
+  )
+}
+
+// --- Traffic Node (special shape for users/volume) ---
+
+function TrafficNode({ data }: { data: TrafficNodeData }) {
+  return (
+    <>
+      <Box sx={{
+        width: 160,
+        borderRadius: '50%',
+        border: '2px dashed #6366f1',
+        bgcolor: '#eef2ff',
+        boxShadow: '0 2px 8px rgba(99,102,241,0.12)',
+        p: 2,
+        textAlign: 'center',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 160,
+      }}>
+        <Typography variant="caption" sx={{ fontSize: 9, color: '#6366f1', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          Traffic Source
+        </Typography>
+        <Typography variant="h6" sx={{ fontWeight: 800, color: '#4338ca', lineHeight: 1.2, mt: 0.5 }}>
+          {data.users.toLocaleString()}
+        </Typography>
+        <Typography variant="caption" sx={{ fontSize: 10, color: '#64748b' }}>
+          users
+        </Typography>
+        <Typography variant="caption" sx={{ fontSize: 9, color: '#64748b', mt: 0.5 }}>
+          {data.conversationsPerUser} conv/{data.timeRange}
+        </Typography>
+        <Typography variant="caption" sx={{ fontSize: 10, fontWeight: 700, color: '#4338ca', mt: 0.25 }}>
+          {data.conversationsPerMonth.toLocaleString()} conv/mo
+        </Typography>
+      </Box>
+      <Handle
+        type="source"
+        position={Position.Right}
+        style={{ width: 10, height: 10, background: '#6366f1', border: '2px solid #fff' }}
       />
     </>
   )
@@ -185,7 +238,7 @@ function computeLayout(agents: Agent[], edges: TopoEdge[], isEntry: (id: string)
 
 export function InteractiveTopology({
   agents, edges, modelOptions, aeirGraph,
-  getAgentCost, getTrafficShare, isEntry, formatCost,
+  getAgentCost, getTrafficShare, isEntry, formatCost, trafficConfig,
   onUpdateAgent, onRemoveAgent, onAddEdge, onUpdateEdge, onRemoveEdge, onAddAgent,
 }: Props) {
   const [editMode, setEditMode] = useState(false)
@@ -204,8 +257,8 @@ export function InteractiveTopology({
   }
 
   // Build nodes — positions come from ref (stable across edge changes)
-  const rfNodes: Node<AgentNodeData>[] = useMemo(() => {
-    return agents.map((agent) => {
+  const rfNodes: Node[] = useMemo(() => {
+    const agentNodes: Node[] = agents.map((agent) => {
       const pos = positionsRef.current.get(agent.id) ?? { x: 0, y: 0 }
       const aeirNode = aeirGraph?.nodes.find(n => n.id === agent.id)
       return {
@@ -219,16 +272,39 @@ export function InteractiveTopology({
           costPerMonth: getAgentCost(agent.id),
           formatCost,
           aeirType: aeirNode?.type?.toUpperCase(),
-        },
+        } as AgentNodeData,
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
       }
     })
-  }, [agents, aeirGraph, isEntry, getTrafficShare, getAgentCost, formatCost])
+
+    // Add traffic source node if config is available
+    if (trafficConfig && trafficConfig.conversationsPerMonth > 0) {
+      const trafficPos = positionsRef.current.get('__traffic__') ?? { x: -200, y: 50 }
+      agentNodes.unshift({
+        id: '__traffic__',
+        type: 'trafficNode',
+        position: trafficPos,
+        data: {
+          users: trafficConfig.users,
+          conversationsPerUser: trafficConfig.conversationsPerUser,
+          conversationsPerMonth: trafficConfig.conversationsPerMonth,
+          timeRange: trafficConfig.timeRange,
+        } as TrafficNodeData,
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
+        draggable: editMode,
+        selectable: false,
+        connectable: false,
+      })
+    }
+
+    return agentNodes
+  }, [agents, aeirGraph, isEntry, getTrafficShare, getAgentCost, formatCost, trafficConfig, editMode])
 
   // Build edges
   const rfEdgesMemo: RFEdge[] = useMemo(() => {
-    return edges.map((edge) => ({
+    const agentEdges: RFEdge[] = edges.map((edge) => ({
       id: edge.id,
       source: edge.sourceId,
       target: edge.targetId,
@@ -246,19 +322,59 @@ export function InteractiveTopology({
       markerEnd: { type: MarkerType.ArrowClosed, color: '#0f766e', width: 16, height: 16 },
       className: `edge-weight-${Math.round(edge.weight * 100)}`,
     }))
-  }, [edges])
+
+    // Add edges from traffic node to entry agents
+    if (trafficConfig && trafficConfig.conversationsPerMonth > 0) {
+      const entryAgentIds = agents.filter(a => isEntry(a.id)).map(a => a.id)
+      entryAgentIds.forEach((entryId) => {
+        agentEdges.push({
+          id: `__traffic__-${entryId}`,
+          source: '__traffic__',
+          target: entryId,
+          type: 'default',
+          animated: true,
+          style: { stroke: '#6366f1', strokeWidth: 2, strokeDasharray: '6 3' },
+          markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1', width: 14, height: 14 },
+          label: '100%',
+          labelStyle: { fontSize: 9, fontWeight: 600, fill: '#6366f1' },
+          labelBgStyle: { fill: '#eef2ff', stroke: '#c7d2fe', strokeWidth: 1 },
+          labelBgPadding: [4, 3] as [number, number],
+          labelBgBorderRadius: 6,
+        })
+      })
+    }
+
+    return agentEdges
+  }, [edges, trafficConfig, agents, isEntry])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(rfNodes)
   const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState(rfEdgesMemo)
+  const { fitView } = useReactFlow()
+  const hasFitRef = useRef(false)
 
-  // Sync nodes when agent data changes (but preserve user-moved positions)
+  // Fit view only once on initial mount or when agent count changes
   useEffect(() => {
-    setNodes((prev) => {
-      // Merge: keep existing positions for nodes that already exist, add new ones
-      const existingPositions = new Map(prev.map(n => [n.id, n.position]))
+    if (!hasFitRef.current && agents.length > 0) {
+      setTimeout(() => fitView({ padding: 0.2 }), 50)
+      hasFitRef.current = true
+    }
+  }, [agents.length, fitView])
+
+  // Reset fit flag when agents are added/removed so it re-fits
+  useEffect(() => {
+    if (agentIds !== prevAgentIdsRef.current) {
+      hasFitRef.current = false
+    }
+  }, [agentIds])
+
+  // Sync node DATA when agent properties change (name, model, tokens, cost)
+  // but preserve positions from React Flow's internal state
+  useEffect(() => {
+    setNodes((currentNodes) => {
+      const currentPositionMap = new Map(currentNodes.map(n => [n.id, n.position]))
       return rfNodes.map(n => ({
         ...n,
-        position: existingPositions.get(n.id) ?? n.position,
+        position: currentPositionMap.get(n.id) ?? n.position,
       }))
     })
   }, [rfNodes, setNodes])
@@ -269,7 +385,7 @@ export function InteractiveTopology({
   }, [rfEdgesMemo, setFlowEdges])
 
   // Track position changes from dragging so they persist
-  const handleNodesChange: OnNodesChange<Node<AgentNodeData>> = useCallback((changes) => {
+  const handleNodesChange: OnNodesChange<Node> = useCallback((changes) => {
     onNodesChange(changes)
     // Save position updates to ref
     for (const change of changes) {
@@ -282,7 +398,7 @@ export function InteractiveTopology({
   // Handle new connections (drag from handle)
   const onConnect: OnConnect = useCallback((connection: Connection) => {
     if (!editMode) return
-    if (connection.source && connection.target && connection.source !== connection.target) {
+    if (connection.source && connection.target && connection.source !== connection.target && connection.source !== '__traffic__') {
       // Check if this connection already exists
       const exists = edges.some(e => e.sourceId === connection.source && e.targetId === connection.target)
       if (!exists) {
@@ -292,7 +408,8 @@ export function InteractiveTopology({
   }, [editMode, onAddEdge, edges])
 
   // Double-click node to edit
-  const onNodeDoubleClick: NodeMouseHandler<Node<AgentNodeData>> = useCallback((_event, node) => {
+  const onNodeDoubleClick: NodeMouseHandler<Node> = useCallback((_event, node) => {
+    if (node.id === '__traffic__') return
     setEditDialogId(node.id)
   }, [])
 
@@ -303,7 +420,7 @@ export function InteractiveTopology({
   }, [editMode])
 
   // Node types (stable ref)
-  const nodeTypes: NodeTypes = useMemo(() => ({ agentNode: AgentNode }), [])
+  const nodeTypes: NodeTypes = useMemo(() => ({ agentNode: AgentNode, trafficNode: TrafficNode }), [])
 
   return (
     <Box sx={{ height: '100%', minHeight: 500, position: 'relative' }}>
@@ -333,8 +450,6 @@ export function InteractiveTopology({
         onNodeDoubleClick={onNodeDoubleClick}
         onEdgeClick={onEdgeClick}
         nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
         nodesDraggable={editMode}
         nodesConnectable={editMode}
         elementsSelectable={editMode}

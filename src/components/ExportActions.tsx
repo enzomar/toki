@@ -228,17 +228,58 @@ export function ExportActions({ agents, edges, estimateConfig, scaledConfig, pri
 
     autoTable(doc, {
       startY: y,
-      head: [['Agent', 'Model', 'Traffic', 'Tokens/mo', 'Cost/mo']],
+      head: [['Agent', 'Model', 'Traffic', 'Input tok/mo', 'Output tok/mo', 'Total tok/mo', 'Cost/mo']],
       body: [
-        ...estimate.agents.map(a => [a.name, getModelLabel(a.model), `${Math.round(a.trafficShare * 100)}%`, formatMetricNumber(a.totalTokensPerMonth), formatCost(a.costPerMonth)]),
-        ['TOTAL', '', '', formatMetricNumber(estimate.totalTokensPerMonth), formatCost(estimate.totalCostPerMonth)],
+        ...estimate.agents.map(a => [a.name, getModelLabel(a.model), `${Math.round(a.trafficShare * 100)}%`, formatMetricNumber(a.inputTokensPerMonth), formatMetricNumber(a.outputTokensPerMonth), formatMetricNumber(a.totalTokensPerMonth), formatCost(a.costPerMonth)]),
+        ['TOTAL', '', '', formatMetricNumber(estimate.totalInputTokens), formatMetricNumber(estimate.totalOutputTokens), formatMetricNumber(estimate.totalTokensPerMonth), formatCost(estimate.totalCostPerMonth)],
       ],
-      styles: { fontSize: 9 },
+      styles: { fontSize: 8 },
       headStyles: { fillColor: [15, 118, 110] },
       alternateRowStyles: { fillColor: [248, 250, 252] },
     })
 
-    y = (doc as any).lastAutoTable.finalY + 12
+    y = (doc as any).lastAutoTable.finalY + 10
+
+    // Grouped by model
+    const modelGroups = new Map<string, { inputTokens: number; outputTokens: number; totalTokens: number; cost: number; agentCount: number }>()
+    estimate.agents.forEach(a => {
+      const existing = modelGroups.get(a.model) ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0, cost: 0, agentCount: 0 }
+      existing.inputTokens += a.inputTokensPerMonth
+      existing.outputTokens += a.outputTokensPerMonth
+      existing.totalTokens += a.totalTokensPerMonth
+      existing.cost += a.costPerMonth
+      existing.agentCount += 1
+      modelGroups.set(a.model, existing)
+    })
+
+    if (modelGroups.size > 1) {
+      if (y > 240) { doc.addPage(); y = 20 }
+      doc.setFontSize(12)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(0)
+      doc.text('Cost by AI Model', 14, y); y += 3
+
+      autoTable(doc, {
+        startY: y,
+        head: [['Model', 'Agents', 'Input tok/mo', 'Output tok/mo', 'Total tok/mo', 'Cost/mo', 'Cost %']],
+        body: Array.from(modelGroups.entries()).map(([model, data]) => [
+          getModelLabel(model),
+          data.agentCount.toString(),
+          formatMetricNumber(data.inputTokens),
+          formatMetricNumber(data.outputTokens),
+          formatMetricNumber(data.totalTokens),
+          formatCost(data.cost),
+          `${Math.round((data.cost / estimate.totalCostPerMonth) * 100)}%`,
+        ]),
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [99, 102, 241] },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+      })
+
+      y = (doc as any).lastAutoTable.finalY + 8
+    } else {
+      y = (doc as any).lastAutoTable.finalY + 12
+    }
 
     // Monte Carlo section
     if (mcReport) {
@@ -297,6 +338,82 @@ export function ExportActions({ agents, edges, estimateConfig, scaledConfig, pri
     onSnackbar({ severity: 'success', message: 'PDF report exported.' })
   }
 
+  // --- Mermaid ---
+  const exportMermaid = () => {
+    if (agents.length === 0) { onSnackbar({ severity: 'info', message: 'Add agents first.' }); return }
+
+    const lines: string[] = ['graph LR']
+
+    // Define nodes with details
+    agents.forEach(a => {
+      const agentEst = estimate.agents.find(ae => ae.id === a.id)
+      const label = [
+        a.name,
+        `${getModelLabel(a.model)}`,
+        `↓${a.inputTokensPerCall} ↑${a.outputTokensPerCall} tok/call`,
+        `${a.callsPerConversation} calls/conv`,
+        agentEst ? `${formatCost(agentEst.costPerMonth)}/mo` : '',
+      ].filter(Boolean).join('\\n')
+
+      // Shape based on type
+      if (a.ragEnabled && a.mcpCalls > 0) {
+        lines.push(`    ${a.id}[["${label}"]]`)  // stadium shape for RAG+MCP
+      } else if (a.ragEnabled) {
+        lines.push(`    ${a.id}[("${label}")]`)  // cylindrical for RAG
+      } else if (a.mcpCalls > 0) {
+        lines.push(`    ${a.id}{{"${label}"}}`)  // hexagon for MCP
+      } else {
+        lines.push(`    ${a.id}["${label}"]`)    // rectangle for plain agent
+      }
+    })
+
+    // Traffic source node
+    if (scaledConfig.conversationsPerMonth > 0) {
+      lines.push(`    __traffic__(("👥 ${estimateConfig.users.toLocaleString()} users\\n${scaledConfig.conversationsPerMonth.toLocaleString()} conv/mo"))`)
+      // Connect traffic to entry agents (those with no incoming edges)
+      const targetIds = new Set(edges.map(e => e.targetId))
+      agents.filter(a => !targetIds.has(a.id)).forEach(a => {
+        lines.push(`    __traffic__ -->|100%| ${a.id}`)
+      })
+    }
+
+    // Define edges
+    edges.forEach(e => {
+      const pct = Math.round(e.weight * 100)
+      lines.push(`    ${e.sourceId} -->|${pct}%| ${e.targetId}`)
+    })
+
+    // Styling
+    lines.push('')
+    lines.push('    %% Styling')
+    agents.forEach(a => {
+      if (a.ragEnabled) {
+        lines.push(`    style ${a.id} fill:#f0fdf4,stroke:#16a34a,stroke-width:2px`)
+      } else if (a.mcpCalls > 0) {
+        lines.push(`    style ${a.id} fill:#fffbeb,stroke:#d97706,stroke-width:2px`)
+      } else {
+        lines.push(`    style ${a.id} fill:#f8fafc,stroke:#64748b,stroke-width:1.5px`)
+      }
+    })
+    if (scaledConfig.conversationsPerMonth > 0) {
+      lines.push(`    style __traffic__ fill:#eef2ff,stroke:#6366f1,stroke-width:2px,stroke-dasharray:5 5`)
+    }
+
+    // Add metadata as comments
+    lines.push('')
+    lines.push(`    %% Workspace: ${workspaceName}`)
+    lines.push(`    %% Total cost: ${formatCost(estimate.totalCostPerMonth)}/mo (deterministic)`)
+    if (mcReport) {
+      lines.push(`    %% MC expected: ${formatCost(mcReport.cost_expected_monthly)}/mo | p90: ${formatCost(mcReport.cost_p90_monthly)} | p99: ${formatCost(mcReport.cost_p99_monthly)}`)
+    }
+    lines.push(`    %% Total tokens: ${formatMetricNumber(estimate.totalTokensPerMonth)}/mo`)
+    lines.push(`    %% Agents: ${agents.length} | Connections: ${edges.length}`)
+
+    const mermaidText = lines.join('\n')
+    downloadBlob(new Blob([mermaidText], { type: 'text/plain' }), `${fileSlug()}-topology.mmd`)
+    onSnackbar({ severity: 'success', message: 'Mermaid topology exported.' })
+  }
+
   return (
     <>
       <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
@@ -316,6 +433,9 @@ export function ExportActions({ agents, edges, estimateConfig, scaledConfig, pri
           <Divider />
           <MenuItem onClick={() => { exportPdf(); setExportAnchor(null) }}>
             <ListItemText primary="Report (PDF)" secondary="Executive summary for stakeholders" slotProps={{ secondary: { variant: 'caption' } }} />
+          </MenuItem>
+          <MenuItem onClick={() => { exportMermaid(); setExportAnchor(null) }}>
+            <ListItemText primary="Topology (Mermaid)" secondary="Graph diagram as Mermaid markdown" slotProps={{ secondary: { variant: 'caption' } }} />
           </MenuItem>
         </Menu>
         <Button size="small" startIcon={<ShareRounded />} onClick={shareWorkspace}>Share</Button>

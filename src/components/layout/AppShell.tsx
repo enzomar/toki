@@ -24,10 +24,11 @@ import {
   HelpOutlineRounded,
   MenuRounded,
   ChevronLeftRounded,
+  TokenRounded,
 } from '@mui/icons-material'
 import { TokiLogo } from '../atoms/TokiLogo'
 
-export type NavPage = 'workspace' | 'topology' | 'simulation' | 'settings' | 'help'
+export type NavPage = 'workspace' | 'topology' | 'simulation' | 'token-tool' | 'settings' | 'help'
 
 type Props = {
   activePage: NavPage
@@ -36,12 +37,13 @@ type Props = {
   version: string
 }
 
-const NAV_ITEMS: Array<{ id: NavPage; label: string; icon: React.ReactNode; description: string }> = [
-  { id: 'workspace', label: 'Workspace', icon: <CalculateRounded />, description: 'Design your system and forecast costs' },
-  { id: 'topology', label: 'Topology', icon: <AccountTreeRounded />, description: 'Visualize agent connections' },
-  { id: 'simulation', label: 'Simulation', icon: <ScienceRounded />, description: 'Monte Carlo & DES analysis' },
-  { id: 'settings', label: 'Settings', icon: <TuneRounded />, description: 'Pricing & configuration' },
-  { id: 'help', label: 'Help', icon: <HelpOutlineRounded />, description: 'Documentation & guides' },
+const NAV_ITEMS: Array<{ id: NavPage; label: string; sublabel: string; icon: React.ReactNode; description: string }> = [
+  { id: 'workspace', label: 'Workspace', sublabel: 'Design & Cost', icon: <CalculateRounded />, description: 'Design your system and forecast costs' },
+  { id: 'topology', label: 'Topology', sublabel: 'Agent Graph', icon: <AccountTreeRounded />, description: 'Visualize agent connections' },
+  { id: 'simulation', label: 'Simulation', sublabel: 'BETA - DES Load Test', icon: <ScienceRounded />, description: 'Discrete event simulation' },
+  { id: 'token-tool', label: 'Token Tool', sublabel: 'Text → Tokens', icon: <TokenRounded />, description: 'Estimate token count from text' },
+  { id: 'settings', label: 'Settings', sublabel: 'Pricing & Models', icon: <TuneRounded />, description: 'Pricing & configuration' },
+  { id: 'help', label: 'Help', sublabel: 'Docs & Guides', icon: <HelpOutlineRounded />, description: 'Documentation & guides' },
 ]
 
 const DRAWER_WIDTH = 220
@@ -114,9 +116,13 @@ export function AppShell({ activePage, onNavigate, children, version }: Props) {
               {drawerOpen && (
                 <ListItemText
                   primary={item.label}
+                  secondary={item.sublabel}
                   slotProps={{
                     primary: {
-                      sx: { fontSize: 14, fontWeight: isActive ? 700 : 500, color: isActive ? '#f7fafc' : 'rgba(255,255,255,0.7)' },
+                      sx: { fontSize: 14, fontWeight: isActive ? 700 : 500, color: isActive ? '#f7fafc' : 'rgba(255,255,255,0.7)', lineHeight: 1.3 },
+                    },
+                    secondary: {
+                      sx: { fontSize: 10, color: isActive ? 'rgba(94,234,212,0.7)' : 'rgba(255,255,255,0.35)', lineHeight: 1.2 },
                     },
                   }}
                 />

@@ -6,7 +6,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import { useState } from 'react'
 import { Box, Button, Chip, Grid, ListItemText, Menu, MenuItem, Stack, TextField } from '@mui/material'
-import { ScienceRounded } from '@mui/icons-material'
+import { DeleteForeverRounded, ScienceRounded } from '@mui/icons-material'
 import type { Agent, Edge, EstimateConfig, EstimateSummary, WorkspacePricing } from '../../features/topology/types'
 import type { ExternalForecastResult } from '../../features/forecasting/aeir'
 import type { AEIRSimConfig } from '../../features/forecasting/aeir-config'
@@ -58,6 +58,7 @@ export type WorkspacePageProps = {
   onSnackbar: (msg: { severity: 'success' | 'error' | 'info'; message: string } | null) => void
   onLoadSample: (e: React.MouseEvent<HTMLElement>) => void
   loadSample: (sampleId: string) => void
+  resetWorkspace: () => void
   bulkChangeModel: (model: string) => void
   formatCost: (v: number) => string
 }
@@ -130,6 +131,15 @@ export function WorkspacePage(props: WorkspacePageProps) {
               onImport={props.onImport}
               onSnackbar={props.onSnackbar}
             />
+            <Button
+              size="small"
+              color="error"
+              startIcon={<DeleteForeverRounded sx={{ fontSize: 16 }} />}
+              onClick={props.resetWorkspace}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Reset
+            </Button>
           </Stack>
         }
       />

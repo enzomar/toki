@@ -19,6 +19,7 @@ type Props = {
   estimate: EstimateSummary
   modelOptions: Array<{ value: string; label: string }>
   aeirGraph: AEIRGraph | null
+  trafficConfig?: { users: number; conversationsPerUser: number; conversationsPerMonth: number; timeRange: string }
   updateAgent: (id: string, patch: Partial<Agent>) => void
   removeAgent: (id: string) => void
   updateEdge: (id: string, patch: Partial<Edge>) => void
@@ -28,12 +29,13 @@ type Props = {
   loadSample: (sampleId: string) => void
   formatCost: (v: number) => string
   onSnackbar: (msg: { severity: 'success' | 'error' | 'info'; message: string } | null) => void
+  onNavigateToWorkspace?: () => void
 }
 
 export function TopologyPage({
-  agents, edges, pricing, estimate, modelOptions, aeirGraph,
+  agents, edges, pricing, estimate, modelOptions, aeirGraph, trafficConfig,
   updateAgent, removeAgent, updateEdge, removeEdge, addEdge, addAgent, loadSample,
-  formatCost, onSnackbar,
+  formatCost, onSnackbar, onNavigateToWorkspace,
 }: Props) {
   const entryAgents = useMemo(() => inferEntryAgents(agents, edges), [agents, edges])
   const trafficShares = useMemo(() => computeTrafficShares(agents, edges), [agents, edges])
@@ -117,6 +119,8 @@ export function TopologyPage({
               onUpdateEdge={updateEdge}
               onRemoveEdge={removeEdge}
               onAddAgent={addAgent}
+              trafficConfig={trafficConfig}
+              onEditTraffic={onNavigateToWorkspace}
             />
           </ReactFlowProvider>
         </Paper>

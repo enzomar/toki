@@ -74,6 +74,15 @@ function computeDeterministicBaseline(
       + (cached / PRICING_TOKENS_PER_UNIT) * mp.cached_in
       + (out / PRICING_TOKENS_PER_UNIT) * mp.out
 
+    // Tool nodes: add MCP tokens (schema + request + response) not baked into input/output_dist
+    if (node.type === 'tool') {
+      const tn = node as ToolNode
+      const mcpTokens = (tn.schema_tokens.mean + tn.request_tokens.mean + tn.response_tokens.mean) * calls * p
+      totalOutput += mcpTokens
+      totalTokens += mcpTokens
+      totalCost += (mcpTokens / PRICING_TOKENS_PER_UNIT) * mp.out
+    }
+
     // RAG: add context tokens + embedding cost (not baked into input_dist for RAG nodes)
     if (node.type === 'rag') {
       const rn = node as RAGNode

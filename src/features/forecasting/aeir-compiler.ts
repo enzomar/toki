@@ -170,9 +170,19 @@ function compileAgent(
       const mcpInputTotal = agent.mcpCalls * agent.mcpInputTokensPerCall
       const mcpOutputTotal = agent.mcpCalls * agent.mcpOutputTokensPerCall
       
+      // For tool nodes: input_dist should NOT include MCP overhead (engine adds it via chaining)
+      // Only base input grown by history (engine re-samples MCP separately)
+      const toolBaseInput = agent.inputTokensPerCall
+      const toolEffectiveInput = Math.round(toolBaseInput * avgGrowth)
+      const toolInputDist = pointToDistribution(toolEffectiveInput, cfg.token_cv)
+      // Output: only base output (engine adds MCP response via sampleChainedMCP)
+      const toolOutputDist = pointToDistribution(agent.outputTokensPerCall, cfg.token_cv)
+      
       return {
         ...baseNode,
         type: 'tool',
+        input_dist: toolInputDist,
+        output_dist: toolOutputDist,
         tool_name: agent.name,
         schema_tokens: pointToDistribution(Math.round(mcpInputTotal * cfg.mcp_schema_fraction), cfg.token_cv),
         request_tokens: pointToDistribution(mcpInputTotal, cfg.token_cv),

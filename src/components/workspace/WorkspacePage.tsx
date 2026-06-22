@@ -5,7 +5,7 @@
  */
 import type { Dispatch, SetStateAction } from 'react'
 import { useState } from 'react'
-import { Box, Button, Chip, Grid, ListItemText, Menu, MenuItem, Stack, TextField } from '@mui/material'
+import { Box, Button, Chip, Grid, ListItemText, Menu, MenuItem, Paper, Stack, TextField } from '@mui/material'
 import { DeleteForeverRounded, ScienceRounded } from '@mui/icons-material'
 import type { Agent, Edge, EstimateConfig, EstimateSummary, WorkspacePricing } from '../../features/topology/types'
 import type { ExternalForecastResult } from '../../features/forecasting/aeir'
@@ -22,6 +22,8 @@ export type WorkspacePageProps = {
   // Workspace state
   workspaceName: string
   setWorkspaceName: (name: string) => void
+  workspaceDescription: string
+  setWorkspaceDescription: (desc: string) => void
   agents: Agent[]
   edges: Edge[]
   estimateConfig: EstimateConfig
@@ -74,14 +76,6 @@ export function WorkspacePage(props: WorkspacePageProps) {
         description="Design your AI system and forecast token costs"
         actions={
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <TextField
-              variant="standard"
-              value={props.workspaceName}
-              onChange={(e) => props.setWorkspaceName(e.target.value)}
-              placeholder="Workspace name"
-              slotProps={{ input: { sx: { fontSize: 13, fontWeight: 600 } } }}
-              sx={{ minWidth: 180 }}
-            />
             <Button
               size="small"
               startIcon={<ScienceRounded sx={{ fontSize: 16 }} />}
@@ -149,6 +143,32 @@ export function WorkspacePage(props: WorkspacePageProps) {
           {/* Left: Content flow */}
           <Grid size={{ xs: 12, lg: 8 }}>
             <Stack spacing={2.5}>
+              {/* Workspace identity */}
+              <Paper sx={{ p: { xs: 2, md: 3 }, borderRadius: 3 }}>
+                <TextField
+                  fullWidth
+                  variant="outlined"
+                  value={props.workspaceName}
+                  onChange={(e) => props.setWorkspaceName(e.target.value)}
+                  placeholder="Workspace name"
+                  label="Workspace name"
+                  slotProps={{ input: { sx: { fontSize: 16, fontWeight: 700 } } }}
+                  sx={{ mb: 1.5 }}
+                />
+                <TextField
+                  fullWidth
+                  variant="outlined"
+                  size="small"
+                  multiline
+                  minRows={1}
+                  maxRows={3}
+                  value={props.workspaceDescription}
+                  onChange={(e) => props.setWorkspaceDescription(e.target.value)}
+                  placeholder="Describe this system — e.g. 'Multi-agent travel rebooking assistant'"
+                  label="Description (optional)"
+                />
+              </Paper>
+
               <TrafficSection
                 estimateConfig={props.estimateConfig}
                 setEstimateConfig={props.setEstimateConfig}

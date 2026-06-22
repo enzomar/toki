@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   ListItemText,
   Menu,
   MenuItem,
@@ -13,7 +19,8 @@ import {
   createDefaultAgent,
   createDefaultWorkspacePricing,
 } from './features/topology/config'
-import type { Agent, Edge, EstimateConfig, WorkspacePricing } from './features/topology/types'
+import type { Agent, Edge, EstimateConfig, LLMPerformanceSettings, WorkspacePricing } from './features/topology/types'
+import { DEFAULT_LLM_PERFORMANCE } from './features/topology/types'
 import {
   calculateEstimate,
   createEstimateConfig,
@@ -55,10 +62,12 @@ export default function App() {
 
   // --- Persisted state ---
   const [workspaceName, setWorkspaceName] = useLocalStorage<string>('v2:name', () => generateWorkspaceName())
+  const [workspaceDescription, setWorkspaceDescription] = useLocalStorage<string>('v2:description', '')
   const [agents, setAgents] = useLocalStorage<Agent[]>('v2:agents', [])
   const [edges, setEdges] = useLocalStorage<Edge[]>('v2:edges', [])
   const [estimateConfig, setEstimateConfig] = useLocalStorage<EstimateConfig>('v2:estimate', () => createEstimateConfig(0, 0, 'month'))
   const [pricing, setPricing] = useLocalStorage<WorkspacePricing>('v2:pricing', createDefaultWorkspacePricing)
+  const [llmPerformance, setLLMPerformance] = useLocalStorage<LLMPerformanceSettings>('v2:llmPerf', () => DEFAULT_LLM_PERFORMANCE)
 
   // Import from URL on first load
   useState(() => {
@@ -78,10 +87,16 @@ export default function App() {
   // --- UI state ---
   const [activePage, setActivePage] = useState<NavPage>('workspace')
   const [snackbar, setSnackbar] = useState<{ severity: 'success' | 'error' | 'info'; message: string } | null>(null)
+
+  // Update browser tab title with workspace name
+  useEffect(() => {
+    document.title = workspaceName ? `${workspaceName} — Toki` : 'Toki'
+  }, [workspaceName])
   const [samplesAnchor, setSamplesAnchor] = useState<HTMLElement | null>(null)
   const [newModelName, setNewModelName] = useState('')
   const [growthMultiplier, setGrowthMultiplier] = useState(1)
   const [showMcDetail, setShowMcDetail] = useState(false)
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false)
 
   // --- Derived state ---
   const scaledConfig = useMemo((): EstimateConfig => ({
@@ -177,11 +192,15 @@ export default function App() {
     const users = Math.round(sample.conversationsPerMonth / convPerUser)
     setEstimateConfig(createEstimateConfig(users, convPerUser, 'month'))
     setWorkspaceName(sample.label)
+    setWorkspaceDescription(sample.description)
     setSnackbar({ severity: 'success', message: `Loaded: ${sample.label}` })
   }
 
   const resetWorkspace = () => {
-    if (!window.confirm('Clear all agents, connections, and settings?')) return
+    setConfirmResetOpen(true)
+  }
+
+  const doReset = () => {
     Object.keys(localStorage).filter((k) => k.startsWith('toki:')).forEach((k) => localStorage.removeItem(k))
     window.location.replace(window.location.pathname)
   }
@@ -193,6 +212,8 @@ export default function App() {
         <WorkspacePage
           workspaceName={workspaceName}
           setWorkspaceName={setWorkspaceName}
+          workspaceDescription={workspaceDescription}
+          setWorkspaceDescription={setWorkspaceDescription}
           agents={agents}
           edges={edges}
           estimateConfig={estimateConfig}
@@ -260,6 +281,8 @@ export default function App() {
           agents={agents}
           edges={safeEdges}
           pricing={pricing}
+          llmPerformance={llmPerformance}
+          setLLMPerformance={setLLMPerformance}
         />
       )}
 
@@ -305,6 +328,22 @@ export default function App() {
           {snackbar?.message ?? ''}
         </Alert>
       </Snackbar>
+
+      {/* Reset confirmation dialog */}
+      <Dialog open={confirmResetOpen} onClose={() => setConfirmResetOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Reset workspace?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will clear all agents, connections, traffic settings, and pricing configuration. This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setConfirmResetOpen(false)}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={doReset}>
+            Reset everything
+          </Button>
+        </DialogActions>
+      </Dialog>
     </AppShell>
   )
 }

@@ -15,7 +15,7 @@ export function HelpPage() {
           <Button
             size="small"
             variant="contained"
-            onClick={() => window.open('/help.html', '_blank')}
+            onClick={() => window.open(`${import.meta.env.BASE_URL}help.html`, '_blank')}
             sx={{ bgcolor: '#0f766e', '&:hover': { bgcolor: '#115e59' } }}
           >
             Open fullscreen ↗
@@ -27,7 +27,7 @@ export function HelpPage() {
         <Paper sx={{ height: '100%', minHeight: 500, overflow: 'hidden', borderRadius: 3 }}>
           <Box
             component="iframe"
-            src="/help.html"
+            src={`${import.meta.env.BASE_URL}help.html`}
             sx={{ width: '100%', height: '100%', minHeight: 500, border: 'none', display: 'block' }}
             title="Toki Help & Presentation"
           />

@@ -88,6 +88,36 @@ export function TopologyPage({
         description="Interactive agent graph — drag, connect, and configure"
         actions={
           <Stack direction="row" spacing={1}>
+            {agents.length > 0 && (
+              <Button size="small" variant="outlined" onClick={() => {
+                const lines = ['graph LR']
+                agents.forEach(a => {
+                  const label = `${a.name}\\n${a.model}\\n↓${a.inputTokensPerCall} ↑${a.outputTokensPerCall}`
+                  if (a.ragEnabled && a.mcpCalls > 0) lines.push(`    ${a.id}[["${label}"]]`)
+                  else if (a.ragEnabled) lines.push(`    ${a.id}[("${label}")]`)
+                  else if (a.mcpCalls > 0) lines.push(`    ${a.id}{{"${label}"}}`)
+                  else lines.push(`    ${a.id}["${label}"]`)
+                })
+                edges.forEach(e => lines.push(`    ${e.sourceId} -->|${Math.round(e.weight * 100)}%| ${e.targetId}`))
+                // Style nodes
+                agents.forEach(a => {
+                  if (a.ragEnabled) lines.push(`    style ${a.id} fill:#f0fdf4,stroke:#16a34a`)
+                  else if (a.mcpCalls > 0) lines.push(`    style ${a.id} fill:#fffbeb,stroke:#d97706`)
+                })
+                const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+                const url = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = url
+                link.download = 'topology.mmd'
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+                URL.revokeObjectURL(url)
+                onSnackbar({ severity: 'success', message: 'Mermaid file downloaded.' })
+              }}>
+                Export Mermaid
+              </Button>
+            )}
             {aeirGraph && (
               <Button size="small" variant="outlined" onClick={() => {
                 navigator.clipboard.writeText(JSON.stringify(aeirGraph, null, 2))

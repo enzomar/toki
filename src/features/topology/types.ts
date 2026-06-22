@@ -3,6 +3,8 @@
 export type Agent = {
   id: string
   name: string
+  /** Optional description of what this agent does */
+  description?: string
   model: string
   /** Average LLM calls per conversation that hit this agent */
   callsPerConversation: number
@@ -52,6 +54,8 @@ export type ModelPricing = {
   batch_in?: number
   /** Batch output price (per 1M tokens). Defaults to out × 0.5 if not set */
   batch_out?: number
+  /** Token generation speed in tokens/second for this model */
+  tokensPerSecond?: number
 }
 
 export type PricingMap = Record<string, ModelPricing>
@@ -64,6 +68,35 @@ export type WorkspacePricing = {
   volumeDiscountPercent?: number
   /** Whether to use batch pricing (50% off, 24h turnaround) */
   useBatchPricing?: boolean
+}
+
+// --- LLM Performance Settings (used by DES simulation) ---
+
+export type LLMPerformanceSettings = {
+  /** Fixed overhead per LLM call in ms (network + prompt processing) */
+  llmOverheadMs: number
+  /** MCP tool call min latency in ms */
+  mcpLatencyMinMs: number
+  /** MCP tool call max latency in ms */
+  mcpLatencyMaxMs: number
+  /** RAG vector search min latency in ms */
+  ragLatencyMinMs: number
+  /** RAG vector search max latency in ms */
+  ragLatencyMaxMs: number
+  /** Probability of failure/retry per call (0-1) */
+  retryProbability: number
+  /** Delay before retrying a failed call in ms */
+  retryDelayMs: number
+}
+
+export const DEFAULT_LLM_PERFORMANCE: LLMPerformanceSettings = {
+  llmOverheadMs: 200,
+  mcpLatencyMinMs: 200,
+  mcpLatencyMaxMs: 2000,
+  ragLatencyMinMs: 50,
+  ragLatencyMaxMs: 500,
+  retryProbability: 0.05,
+  retryDelayMs: 1000,
 }
 
 export type TimeRange = 'day' | 'week' | 'month' | 'year'
@@ -128,6 +161,8 @@ export type LayoutNode = {
 export type TopologyDocument = {
   version: string
   exportedAt: string
+  /** Optional workspace description */
+  description?: string
   topology: {
     agents: Agent[]
     edges: Edge[]

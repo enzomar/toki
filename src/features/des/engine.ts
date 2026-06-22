@@ -217,8 +217,9 @@ export function runDES(
         const outputTokens = Math.round(sampleTruncatedNormal(rng, agent.outputTokensPerCall, agent.outputTokensPerCall * 0.15, agent.outputTokensPerCall * 0.3, agent.outputTokensPerCall * 2.5))
         const totalTokens = inputTokens + outputTokens
 
-        // LLM latency (output generation + fixed overhead)
-        const llmLatencyMs = (outputTokens / config.llmTokensPerSecond) * 1000 + config.llmOverheadMs
+        // LLM latency (output generation + fixed overhead) — per-model speed
+        const modelTokSec = pricing.models[agent.model]?.tokensPerSecond ?? config.llmTokensPerSecond
+        const llmLatencyMs = (outputTokens / modelTokSec) * 1000 + config.llmOverheadMs
 
         // MCP latency (parallel calls, take the max)
         let mcpMaxLatency = 0

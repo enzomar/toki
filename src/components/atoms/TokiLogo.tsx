@@ -13,7 +13,7 @@ export function TokiLogo({ light = false, caption = 'Multi-Agent Token Forecasti
     <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
       <Box
         component="img"
-        src="/toki-logo.png"
+        src={`${import.meta.env.BASE_URL}toki-logo.png`}
         alt="Toki logo mark"
         sx={{ height: { xs: 46, md: 52 }, width: 'auto', display: 'block', flexShrink: 0 }}
       />

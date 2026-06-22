@@ -28,6 +28,72 @@ import { DEFAULT_AEIR_SIM_CONFIG, AEIR_SIM_CONFIG_META } from '../../features/fo
 import type { Agent, EstimateConfig, EstimateSummary } from '../../features/topology/types'
 import { formatMetricNumber, getModelLabel } from '../../features/topology/utils'
 
+// --- Divergence analysis ---
+
+function getDivergenceHints(mcReport: ExternalForecastResult, agents: Agent[]): string[] {
+  const hints: string[] = []
+  const ratio = mcReport.alignment_ratio
+
+  // MC higher than deterministic
+  if (ratio > 1.1) {
+    // Check MCP tool agents — chaining/retry adds tokens
+    const toolAgents = agents.filter(a => a.mcpCalls > 0)
+    if (toolAgents.length > 0) {
+      const totalMcpCalls = toolAgents.reduce((sum, a) => sum + a.mcpCalls, 0)
+      hints.push(`MCP tool chaining (+20% per chain) and retries (+15%) amplify token usage across ${totalMcpCalls} tool calls`)
+    }
+
+    // Check history growth
+    const growthAgents = agents.filter(a => a.historyGrowthFactor > 1 && a.callsPerConversation > 1)
+    if (growthAgents.length > 0) {
+      hints.push(`History growth on multi-turn agents (${growthAgents.map(a => a.name).join(', ')}) compounds non-linearly in MC`)
+    }
+
+    // RAG variance
+    const ragAgents = agents.filter(a => a.ragEnabled)
+    if (ragAgents.length > 0) {
+      hints.push(`RAG chunk retrieval variance — some runs retrieve more chunks than average (amplification factor 1.5×)`)
+    }
+
+    if (hints.length === 0) {
+      hints.push(`Natural variance in token sampling pushes the MC expected slightly above the fixed deterministic value`)
+    }
+  }
+
+  // MC lower than deterministic
+  if (ratio < 0.9) {
+    // Router with multiple paths — MC picks one per conversation
+    const routerLikeAgents = agents.filter(a => a.routingMode === 'weighted' && a.callsPerConversation <= 1)
+    if (routerLikeAgents.length > 0) {
+      hints.push(`Router selects one path per conversation — not all agents fire every time (categorical vs proportional)`)
+    }
+
+    // Low edge weights mean many agents rarely execute
+    if (mcReport.dominant_nodes && mcReport.dominant_nodes.length > 0) {
+      const lowExec = mcReport.dominant_nodes.filter(n => n.cost_fraction < 0.1)
+      if (lowExec.length > 1) {
+        hints.push(`${lowExec.length} agents have low execution rates — MC reflects that most conversations only traverse a subset`)
+      }
+    }
+
+    if (hints.length === 0) {
+      hints.push(`MC simulation accounts for the probabilistic nature of edge traversal — not all paths fire every conversation`)
+    }
+  }
+
+  // Well aligned — explain why
+  if (ratio >= 0.9 && ratio <= 1.1) {
+    if (mcReport.tail_risk_factor > 2) {
+      hints.push(`Well aligned on average, but high tail risk (${mcReport.tail_risk_factor.toFixed(1)}×) means some conversations cost much more`)
+    }
+    if (agents.some(a => a.mcpCalls > 2)) {
+      hints.push(`Good alignment — MCP chain/retry overhead is modest at current tool call volumes`)
+    }
+  }
+
+  return hints
+}
+
 export type CostPanelProps = {
   estimate: EstimateSummary
   mcReport: ExternalForecastResult | null
@@ -246,6 +312,24 @@ export function CostPanel({
                   <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9 }}>Confidence</Typography><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 10, display: 'block' }}>{Math.round(mcReport.confidence_score * 100)}%</Typography></Grid>
                   <Grid size={4}><Typography variant="caption" color="text.secondary" sx={{ fontSize: 9 }}>Alignment</Typography><Typography variant="caption" sx={{ fontWeight: 700, fontSize: 10, color: mcReport.alignment_ok ? 'success.main' : 'warning.main', display: 'block' }}>×{mcReport.alignment_ratio.toFixed(2)}</Typography></Grid>
                 </Grid>
+
+                {/* Divergence explanation */}
+                {(() => {
+                  const hints = getDivergenceHints(mcReport, agents)
+                  if (hints.length === 0) return null
+                  return (
+                    <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(99,102,241,0.04)', borderRadius: 1.5, border: '1px solid rgba(99,102,241,0.1)' }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, fontSize: 9, color: '#4f46e5', display: 'block', mb: 0.5 }}>
+                        Why MC differs from deterministic:
+                      </Typography>
+                      {hints.map((hint, i) => (
+                        <Typography key={i} variant="caption" color="text.secondary" sx={{ fontSize: 9, display: 'block', lineHeight: 1.5 }}>
+                          • {hint}
+                        </Typography>
+                      ))}
+                    </Box>
+                  )
+                })()}
               </>
             ) : (
               <Typography variant="caption" color="text.secondary">

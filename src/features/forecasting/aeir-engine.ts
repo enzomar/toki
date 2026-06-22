@@ -173,11 +173,13 @@ function simulateOneConversation(
       result.breakdown.reasoning += exec.breakdown.reasoning
     }
 
-    // --- Traverse outgoing edges (Bernoulli gates) ---
+    // --- Traverse outgoing edges ---
     const edges = outEdges.get(nodeId) || []
+    if (edges.length === 0) continue
 
-    // Determine routing mode from node (RouterNode stores it)
-    const routingMode = node.type === 'router' ? (node as RouterNode).routing_mode : 'weighted'
+    // Determine routing mode
+    const isRouter = node.type === 'router'
+    const routingMode = isRouter ? (node as RouterNode).routing_mode : 'weighted'
 
     if (routingMode === 'interleave' && edges.length > 0) {
       // Round-robin: pick one edge uniformly
@@ -186,8 +188,35 @@ function simulateOneConversation(
       if (!visited.has(chosenEdge.target_id)) {
         queue.push(chosenEdge.target_id)
       }
+    } else if (isRouter && routingMode === 'weighted') {
+      // Router with weighted mode: select ONE downstream path using edge weights as probabilities.
+      // This is a categorical distribution — the router's job is to dispatch to exactly one specialist.
+      // Normalize weights and roll a single dice.
+      const totalWeight = edges.reduce((sum, e) => sum + e.probability, 0)
+      if (totalWeight > 0) {
+        const roll = rng() * totalWeight
+        let cumulative = 0
+        for (const edge of edges) {
+          cumulative += edge.probability
+          if (roll <= cumulative) {
+            if (!visited.has(edge.target_id)) {
+              queue.push(edge.target_id)
+            }
+            break
+          }
+        }
+      }
+    } else if (routingMode === 'fanout') {
+      // Fan-out: ALL downstream agents fire. Edge weight scales execution probability
+      // but all paths are always taken.
+      for (const edge of edges) {
+        if (!visited.has(edge.target_id)) {
+          queue.push(edge.target_id)
+        }
+      }
     } else {
-      // Weighted / Fan-out: each edge is an independent Bernoulli gate
+      // Default (non-router weighted): each edge is an independent Bernoulli gate.
+      // This models "this conversation might also trigger downstream agent X with P% probability"
       for (const edge of edges) {
         if (bernoulli(rng, edge.probability)) {
           if (!visited.has(edge.target_id)) {
@@ -220,16 +249,9 @@ function executeNode(
   cfg: AEIRSimConfig,
   depth: number,
 ): NodeExecResult | null {
-  // Node activation: Bernoulli with execution_probability
-  // (For entry nodes this is 1.0, for downstream it encodes whether this
-  // specific path was taken — but graph traversal already handles that.
-  // We still check execution_probability for nodes that have conditional
-  // activation independent of graph structure.)
-  // Skip this check for nodes reached via graph traversal (prob is already
-  // encoded in edge traversal). Only apply if < 1 to model internal conditionals.
-  if (node.execution_probability < 1.0 && !bernoulli(rng, node.execution_probability)) {
-    return null
-  }
+  // Node activation is handled by graph traversal (Bernoulli gates on edges).
+  // We do NOT re-check execution_probability here — the BFS already determined
+  // whether this node was reached in this simulation run.
 
   // Sample number of calls
   const numCalls = Math.max(1, Math.round(sampleTruncatedNormal(

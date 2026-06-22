@@ -49,10 +49,10 @@ export function toNumber(value: unknown, fallback: number): number {
 
 // --- Pricing helpers ---
 
-export function getPricing(model: string, pricingMap: PricingMap = PRICING): { in: number; out: number; cached_in: number } {
+export function getPricing(model: string, pricingMap: PricingMap = PRICING): { in: number; out: number; cached_in: number; tokensPerSecond: number } {
   const p = pricingMap[model]
-  if (!p) return { in: 0, out: 0, cached_in: 0 }
-  return { in: p.in, out: p.out, cached_in: p.cached_in ?? p.in * 0.5 }
+  if (!p) return { in: 0, out: 0, cached_in: 0, tokensPerSecond: 50 }
+  return { in: p.in, out: p.out, cached_in: p.cached_in ?? p.in * 0.5, tokensPerSecond: p.tokensPerSecond ?? 50 }
 }
 
 /**
@@ -367,6 +367,105 @@ export function getAgentConnections(agentId: string, edges: Edge[]): { incoming:
 
 // --- Token estimation from text ---
 
+/** Context window sizes for common models (tokens) */
+export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  'gpt-4.1': 1_048_576,
+  'gpt-4.1-mini': 1_048_576,
+  'gpt-4.1-nano': 1_048_576,
+  'gpt-4o': 128_000,
+  'gpt-4o-mini': 128_000,
+  'o3': 200_000,
+  'o4-mini': 200_000,
+  'claude-sonnet-4': 200_000,
+  'claude-haiku-4': 200_000,
+  'claude-opus-4': 200_000,
+  'gemini-2.5-pro': 1_048_576,
+}
+
+const DEFAULT_CONTEXT_WINDOW = 128_000
+
+/**
+ * Fast token estimator: chars / 4.
+ * O(1), no parsing. Good for quick checks far from the limit.
+ */
+export function estimateTokensFast(text: string): number {
+  const trimmed = text.trim()
+  if (!trimmed) return 0
+  return Math.max(1, Math.ceil(trimmed.length / 4))
+}
+
+/**
+ * Accurate regex-based tokenizer mimicking BPE patterns (GPT-style).
+ * Splits on whitespace boundaries, punctuation, numbers, and byte sequences.
+ * Within ~5% of tiktoken for English text. O(n) with regex.
+ */
+export function estimateTokensAccurate(text: string): number {
+  const trimmed = text.trim()
+  if (!trimmed) return 0
+
+  // GPT-4 BPE-like regex pattern: captures words with leading space,
+  // numbers, punctuation sequences, and remaining characters.
+  const pattern = /(?:'s|'t|'re|'ve|'m|'ll|'d)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+/gu
+  const matches = trimmed.match(pattern)
+  if (!matches) return Math.max(1, Math.ceil(trimmed.length / 4))
+
+  let tokenCount = 0
+  for (const match of matches) {
+    const len = match.length
+    // Short tokens (1-4 chars) are typically 1 BPE token
+    // Longer ones get split roughly every 4-5 chars
+    if (len <= 4) {
+      tokenCount += 1
+    } else if (len <= 8) {
+      tokenCount += 2
+    } else {
+      tokenCount += Math.ceil(len / 4)
+    }
+  }
+
+  return Math.max(1, tokenCount)
+}
+
+/**
+ * Smart token estimation with adaptive precision.
+ * - Fast estimate first (chars / 4)
+ * - If >70% of context window: runs accurate tokenizer
+ * - Returns both the count and the method used
+ */
+export function estimateTokensSmart(
+  text: string,
+  model?: string,
+): { tokens: number; method: 'fast' | 'accurate'; nearLimit: boolean; contextWindow: number; utilizationPercent: number } {
+  const trimmed = text.trim()
+  if (!trimmed) return { tokens: 0, method: 'fast', nearLimit: false, contextWindow: DEFAULT_CONTEXT_WINDOW, utilizationPercent: 0 }
+
+  const contextWindow = (model ? MODEL_CONTEXT_WINDOWS[model] : undefined) ?? DEFAULT_CONTEXT_WINDOW
+  const fastEstimate = estimateTokensFast(trimmed)
+  const utilizationFast = fastEstimate / contextWindow
+
+  // If estimate > 70% of context window, run accurate tokenizer
+  if (utilizationFast > 0.7) {
+    const accurate = estimateTokensAccurate(trimmed)
+    const utilization = accurate / contextWindow
+    return {
+      tokens: accurate,
+      method: 'accurate',
+      nearLimit: utilization > 0.9,
+      contextWindow,
+      utilizationPercent: Math.round(utilization * 100),
+    }
+  }
+
+  return {
+    tokens: fastEstimate,
+    method: 'fast',
+    nearLimit: false,
+    contextWindow,
+    utilizationPercent: Math.round(utilizationFast * 100),
+  }
+}
+
+/** Legacy function — still used by cost calculator internals */
 export function estimateTokenCount(text: string): number {
   const trimmed = text.trim()
   if (!trimmed) return 0

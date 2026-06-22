@@ -105,7 +105,11 @@ describe('getPricing', () => {
 
   it('uses custom pricing map', () => {
     const custom = { 'my-model': { in: 5, out: 10 } }
-    expect(getPricing('my-model', custom)).toEqual({ in: 5, out: 10 })
+    const result = getPricing('my-model', custom)
+    expect(result.in).toBe(5)
+    expect(result.out).toBe(10)
+    expect(result.cached_in).toBe(2.5) // defaults to in * 0.5
+    expect(result.tokensPerSecond).toBe(50) // default fallback
   })
 })
 

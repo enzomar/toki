@@ -140,6 +140,11 @@ function AgentCard(props: {
           </IconButton>
           <Box>
             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>{agent.name}</Typography>
+            {agent.description && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 11, mt: -0.25 }}>
+                {agent.description}
+              </Typography>
+            )}
             <Stack direction="row" spacing={0.5} sx={{ mt: 0.25 }}>
               <Chip size="small" label={getModelLabel(agent.model)} variant="outlined" sx={{ height: 18, fontSize: 10 }} />
               {agent.ragEnabled && <Chip size="small" label="RAG" color="success" variant="outlined" sx={{ height: 18, fontSize: 10 }} />}
@@ -170,28 +175,32 @@ function AgentCard(props: {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid size={{ xs: 6, sm: 2 }}>
+            <Grid size={{ xs: 4, sm: 2 }}>
               <Stack direction="row" sx={{ alignItems: 'flex-start' }}>
-                <TextField fullWidth size="small" type="number" label="Input tokens"
+                <TextField fullWidth size="small" type="number" label="In tok"
                   value={agent.inputTokensPerCall}
                   onChange={(e) => props.onUpdate({ inputTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, agent.inputTokensPerCall))) })} />
                 <TokenToolInlineButton onResult={(tokens) => props.onUpdate({ inputTokensPerCall: tokens })} label="Set as input" />
               </Stack>
             </Grid>
-            <Grid size={{ xs: 6, sm: 2 }}>
+            <Grid size={{ xs: 4, sm: 2 }}>
               <Stack direction="row" sx={{ alignItems: 'flex-start' }}>
-                <TextField fullWidth size="small" type="number" label="Output tokens"
+                <TextField fullWidth size="small" type="number" label="Out tok"
                   value={agent.outputTokensPerCall}
                   onChange={(e) => props.onUpdate({ outputTokensPerCall: Math.max(0, Math.round(toNumber(e.target.value, agent.outputTokensPerCall))) })} />
                 <TokenToolInlineButton onResult={(tokens) => props.onUpdate({ outputTokensPerCall: tokens })} label="Set as output" />
               </Stack>
             </Grid>
-            <Grid size={{ xs: 6, sm: 2 }}>
+            <Grid size={{ xs: 4, sm: 2 }}>
               <TextField fullWidth size="small" type="number" label="Calls/conv"
                 value={agent.callsPerConversation}
                 onChange={(e) => props.onUpdate({ callsPerConversation: Math.max(1, Math.round(toNumber(e.target.value, agent.callsPerConversation))) })} />
             </Grid>
           </Grid>
+          <TextField fullWidth size="small" label="Description" value={agent.description ?? ''} placeholder="What does this agent do?"
+            onChange={(e) => props.onUpdate({ description: e.target.value || undefined })}
+            sx={{ mt: 1.5 }}
+          />
 
           {/* Advanced toggle */}
           <Button

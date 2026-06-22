@@ -1,8 +1,8 @@
 /**
  * SettingsPage — Model pricing configuration.
  */
-import { Box } from '@mui/material'
 import type { Dispatch, SetStateAction } from 'react'
+import { Box } from '@mui/material'
 import type { Agent, WorkspacePricing } from '../../features/topology/types'
 import { PricingTab } from '../PricingTab'
 import { PageHeader } from '../layout/PageHeader'
@@ -19,7 +19,7 @@ type Props = {
 export function SettingsPage({ pricing, setPricing, agents, modelOptions, newModelName, setNewModelName }: Props) {
   return (
     <Box sx={{ height: '100%', overflowY: 'auto' }}>
-      <PageHeader title="Settings" description="Configure model pricing, volume discounts, and batch API options" />
+      <PageHeader title="Pricing" description="Configure model pricing, volume discounts, and batch API options" />
 
       <Box sx={{ px: { xs: 2, md: 4 }, pb: 4 }}>
         <PricingTab

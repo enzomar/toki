@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import {
   Box,
+  Button,
   Drawer,
   IconButton,
   List,
@@ -25,8 +26,14 @@ import {
   MenuRounded,
   ChevronLeftRounded,
   TokenRounded,
+  FavoriteRounded,
+  MailOutlineRounded,
 } from '@mui/icons-material'
 import { TokiLogo } from '../atoms/TokiLogo'
+import { ContactDialog } from './ContactDialog'
+
+// PayPal donation link. Configured via VITE_PAYPAL_DONATE_URL; falls back to a generic PayPal.me-style page.
+const PAYPAL_DONATE_URL = import.meta.env.VITE_PAYPAL_DONATE_URL ?? 'https://www.paypal.com/donate'
 
 export type NavPage = 'workspace' | 'topology' | 'simulation' | 'token-tool' | 'settings' | 'help'
 
@@ -53,6 +60,7 @@ export function AppShell({ activePage, onNavigate, children, version }: Props) {
   const isPhone = useMediaQuery('(max-width:900px)')
   const [drawerOpen, setDrawerOpen] = useState(!isPhone)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [contactOpen, setContactOpen] = useState(false)
 
   const drawerWidth = drawerOpen ? DRAWER_WIDTH : DRAWER_COLLAPSED
 
@@ -65,7 +73,12 @@ export function AppShell({ activePage, onNavigate, children, version }: Props) {
       >
         {drawerOpen ? (
           <>
-            <TokiLogo light caption="" />
+            <Stack>
+              <TokiLogo light caption="" />
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 9, mt: 0.5 }}>
+                AI Token Cost Forecasting
+              </Typography>
+            </Stack>
             {!isPhone && (
               <IconButton size="small" onClick={() => setDrawerOpen(false)} sx={{ color: 'rgba(255,255,255,0.5)' }}>
                 <ChevronLeftRounded fontSize="small" />
@@ -139,13 +152,88 @@ export function AppShell({ activePage, onNavigate, children, version }: Props) {
       </List>
 
       {/* Footer */}
-      {drawerOpen && (
-        <Box sx={{ px: 2, py: 1.5, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 10 }}>
-            Toki v{version}
-          </Typography>
-        </Box>
-      )}
+      <Box sx={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        {/* Support & Contact actions */}
+        {drawerOpen ? (
+          <Stack spacing={1} sx={{ px: 2, pt: 1.5, pb: 1 }}>
+            <Button
+              component="a"
+              href={PAYPAL_DONATE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              startIcon={<FavoriteRounded sx={{ fontSize: 16 }} />}
+              size="small"
+              fullWidth
+              sx={{
+                justifyContent: 'flex-start',
+                textTransform: 'none',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#0b1523',
+                bgcolor: '#5eead4',
+                borderRadius: 2,
+                '&:hover': { bgcolor: '#4fd1c5' },
+              }}
+            >
+              Support this project
+            </Button>
+            <Button
+              onClick={() => setContactOpen(true)}
+              startIcon={<MailOutlineRounded sx={{ fontSize: 16 }} />}
+              size="small"
+              fullWidth
+              sx={{
+                justifyContent: 'flex-start',
+                textTransform: 'none',
+                fontSize: 12,
+                fontWeight: 600,
+                color: 'rgba(255,255,255,0.75)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: 2,
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.05)', borderColor: 'rgba(255,255,255,0.3)' },
+              }}
+            >
+              Contact the author
+            </Button>
+          </Stack>
+        ) : (
+          <Stack spacing={0.5} sx={{ alignItems: 'center', py: 1.5 }}>
+            <Tooltip title="Support this project" placement="right" arrow>
+              <IconButton
+                component="a"
+                href={PAYPAL_DONATE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                size="small"
+                sx={{ color: '#5eead4', '&:hover': { bgcolor: 'rgba(94,234,212,0.1)' } }}
+              >
+                <FavoriteRounded fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Contact the author" placement="right" arrow>
+              <IconButton
+                onClick={() => setContactOpen(true)}
+                size="small"
+                sx={{ color: 'rgba(255,255,255,0.6)', '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' } }}
+              >
+                <MailOutlineRounded fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+        )}
+
+        {/* Version & attribution */}
+        {drawerOpen && (
+          <Box sx={{ px: 2, pb: 1.5 }}>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, display: 'block' }}>
+              Toki v{version}
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.2)', fontSize: 9 }}>
+              Created by Vincenzo Marafioti
+            </Typography>
+          </Box>
+        )}
+      </Box>
     </Box>
   )
 
@@ -202,6 +290,9 @@ export function AppShell({ activePage, onNavigate, children, version }: Props) {
       >
         {children}
       </Box>
+
+      {/* Author contact dialog (Formspree) */}
+      <ContactDialog open={contactOpen} onClose={() => setContactOpen(false)} />
     </Box>
   )
 }

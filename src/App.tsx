@@ -44,6 +44,7 @@ import { TokenToolPage } from './components/token-tool/TokenToolPage'
 import { SettingsPage } from './components/settings/SettingsPage'
 import { HelpPage } from './components/help/HelpPage'
 import { McDetailDialog } from './components/McDetailDialog'
+import { WelcomeSplash, shouldShowWelcome } from './components/WelcomeSplash'
 
 const APP_VERSION = __APP_VERSION__
 
@@ -87,6 +88,7 @@ export default function App() {
   // --- UI state ---
   const [activePage, setActivePage] = useState<NavPage>('workspace')
   const [snackbar, setSnackbar] = useState<{ severity: 'success' | 'error' | 'info'; message: string } | null>(null)
+  const [showWelcome, setShowWelcome] = useState(shouldShowWelcome)
 
   // Update browser tab title with workspace name
   useEffect(() => {
@@ -344,6 +346,9 @@ export default function App() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Welcome splash */}
+      <WelcomeSplash open={showWelcome} onClose={() => setShowWelcome(false)} />
     </AppShell>
   )
 }

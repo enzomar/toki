@@ -11,7 +11,7 @@ RUN npm run build
 FROM docker-release.nce.dockerhub.rnd.amadeus.net/acs/rhel-init
 
 # Labels (Forge best practice)
-LABEL maintainer="vincenzo.marafioti@amadeus.com" \
+LABEL maintainer="enzomar@gmail.com" \
       org.label-schema.name="toki" \
       org.label-schema.description="Token Cost Calculator for Agentic AI Systems" \
       org.label-schema.vendor="Amadeus" \

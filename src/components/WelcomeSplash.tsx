@@ -54,11 +54,13 @@ export function WelcomeSplash({ open, onClose }: Props) {
       onClose={handleClose}
       maxWidth="sm"
       fullWidth
-      PaperProps={{
-        sx: {
-          borderRadius: 4,
-          overflow: 'hidden',
-          bgcolor: '#ffffff',
+      slotProps={{
+        paper: {
+          sx: {
+            borderRadius: 4,
+            overflow: 'hidden',
+            bgcolor: '#ffffff',
+          },
         },
       }}
     >
